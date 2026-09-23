@@ -1,0 +1,1293 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>수상한 우주선</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Jua&family=Noto+Sans+KR:wght@400;500;700;900&family=Space+Mono:wght@400;700&display=swap');
+
+  :root{
+    --void: #0a0e1e;
+    --panel: #161b36;
+    --panel-2: #1f2547;
+    --panel-3: #262d54;
+    --line: #33396b;
+    --text: #eef0fb;
+    --text-dim: #8891c2;
+    --accent: #ffce45;
+    --accent-dim: #8a6f1f;
+    --cyan: #5ce1ff;
+    --danger: #ff5470;
+    --success: #48e6a0;
+  }
+
+  *{ box-sizing: border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    background: var(--void);
+    color: var(--text);
+    font-family: 'Noto Sans KR', sans-serif;
+    min-height: 100vh;
+    overflow: hidden;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+  }
+  h1,h2,h3, .display{ font-family: 'Jua', 'Noto Sans KR', sans-serif; text-wrap: balance; }
+  .mono{ font-family: 'Space Mono', monospace; font-variant-numeric: tabular-nums; }
+
+  #stars{ position:fixed; inset:0; z-index:0; }
+
+  .app{ position:relative; z-index:1; width:100%; height:100vh; height:100dvh; display:flex; align-items:center; justify-content:center; }
+
+  .hidden{ display:none !important; }
+
+  /* ---------- Title / Lobby shared panel ---------- */
+  .panel{
+    width: min(92vw, 460px);
+    background: linear-gradient(180deg, var(--panel-2), var(--panel));
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    padding: 28px 24px 24px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.04);
+    position: relative;
+    overflow: hidden;
+  }
+  .panel::before{
+    content:"";
+    position:absolute; top:0; left:0; right:0; height:3px;
+    background: linear-gradient(90deg, var(--cyan), var(--accent));
+  }
+  .eyebrow{
+    font-family:'Space Mono', monospace;
+    font-size:11px; letter-spacing:0.14em; color: var(--text-dim);
+    text-transform: uppercase; margin: 0 0 4px;
+  }
+  .title-logo{
+    font-size: 34px; color: var(--accent); margin: 0 0 2px;
+    text-shadow: 0 0 18px rgba(255,206,69,0.35);
+  }
+  .subtitle{ color: var(--text-dim); font-size: 13.5px; margin: 0 0 22px; line-height:1.5; }
+
+  label.field-label{ display:block; font-size:12.5px; color:var(--text-dim); margin: 14px 0 6px; }
+  input[type=text]{
+    width:100%; padding: 13px 14px; border-radius: 12px;
+    border: 1.5px solid var(--line); background: var(--void);
+    color: var(--text); font-size: 16px; font-family: inherit;
+    outline: none; transition: border-color .15s;
+  }
+  input[type=text]:focus{ border-color: var(--cyan); }
+  input.code-input{ font-family:'Space Mono',monospace; letter-spacing:0.3em; text-align:center; font-size:22px; text-transform:uppercase; }
+
+  .btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:8px;
+    border:none; border-radius: 14px; padding: 14px 18px;
+    font-family:'Jua','Noto Sans KR',sans-serif; font-size:16px; cursor:pointer;
+    width:100%; margin-top: 12px; transition: transform .08s, filter .15s, opacity .15s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn:active{ transform: scale(0.97); }
+  .btn:disabled{ opacity:.4; cursor:not-allowed; }
+  .btn-primary{ background: var(--accent); color:#3a2c02; }
+  .btn-primary:hover{ filter:brightness(1.08); }
+  .btn-ghost{ background: var(--panel-3); color: var(--text); border:1px solid var(--line); }
+  .btn-danger{ background: var(--danger); color:#3a0413; }
+  .btn-success{ background: var(--success); color:#053322; }
+  .btn-small{ padding:9px 12px; font-size:13px; width:auto; margin-top:0; border-radius:10px; }
+
+  .row{ display:flex; gap:10px; }
+  .row > *{ flex:1; }
+
+  .error-msg{
+    background: rgba(255,84,112,0.12); border:1px solid rgba(255,84,112,0.4);
+    color:#ffb3c2; padding:10px 12px; border-radius:10px; font-size:13px;
+    margin-top:14px; line-height:1.5;
+  }
+  .notice-msg{
+    background: rgba(92,225,255,0.1); border:1px solid rgba(92,225,255,0.35);
+    color:#bdf1ff; padding:10px 12px; border-radius:10px; font-size:12.5px;
+    margin-top:14px; line-height:1.5;
+  }
+
+  /* ---------- Lobby player list ---------- */
+  .room-code-display{
+    text-align:center; margin: 4px 0 18px;
+  }
+  .room-code-display .code{
+    font-family:'Space Mono',monospace; font-size:40px; letter-spacing:0.25em;
+    color: var(--accent); font-weight:700; line-height:1;
+  }
+  .room-code-display .hint{ font-size:11.5px; color:var(--text-dim); margin-top:6px; }
+
+  .player-list{ display:flex; flex-direction:column; gap:8px; margin: 6px 0 4px; max-height: 220px; overflow-y:auto; }
+  .player-chip{
+    display:flex; align-items:center; gap:10px;
+    background: var(--panel-3); border:1px solid var(--line);
+    border-radius: 12px; padding: 9px 12px; font-size:14.5px;
+  }
+  .dot{ width:16px; height:16px; border-radius:50%; flex:none; box-shadow: 0 0 0 2px rgba(255,255,255,0.15) inset; }
+  .player-chip .pname{ flex:1; font-weight:500; }
+  .player-chip .ptag{ font-size:11px; color: var(--void); background: var(--accent); padding:2px 7px; border-radius:20px; font-family:'Space Mono',monospace; }
+  .player-chip.dead{ opacity:0.45; }
+  .player-chip .skull{ font-size:13px; }
+
+  .lobby-footer-note{ font-size:12px; color:var(--text-dim); text-align:center; margin-top:14px; line-height:1.6; }
+
+  /* ---------- Game view ---------- */
+  #gameWrap{ position:fixed; inset:0; z-index:1; }
+  #mapCanvas{ position:absolute; inset:0; width:100%; height:100%; display:block; touch-action:none; }
+
+  .hud-top-left{
+    position:absolute; top: max(12px, env(safe-area-inset-top)); left:12px;
+    display:flex; flex-direction:column; gap:6px; max-width: 42vw;
+    max-height: 46vh; overflow-y:auto; z-index:5;
+  }
+  .hud-chip{
+    display:flex; align-items:center; gap:7px;
+    background: rgba(22,27,54,0.85); backdrop-filter: blur(6px);
+    border:1px solid var(--line); border-radius: 10px; padding: 5px 9px;
+    font-size:12.5px; white-space:nowrap;
+  }
+  .hud-chip .dot{ width:11px; height:11px; }
+  .hud-chip.dead{ opacity:0.4; text-decoration: line-through; }
+  .hud-chip.me{ border-color: var(--cyan); }
+
+  .role-banner{
+    position:absolute; top: max(12px, env(safe-area-inset-top)); left:50%; transform:translateX(-50%);
+    z-index:5; padding:6px 16px; border-radius:20px; font-family:'Jua',sans-serif;
+    font-size:13px; letter-spacing:0.02em; background: rgba(22,27,54,0.85); backdrop-filter: blur(6px);
+    border:1px solid var(--line); white-space:nowrap;
+  }
+  .role-banner.impostor{ color: var(--danger); border-color: var(--danger); }
+  .role-banner.crew{ color: var(--success); border-color: var(--success); }
+
+  .controls-bottom{
+    position:absolute; left:0; right:0; bottom: max(14px, env(safe-area-inset-bottom));
+    display:flex; justify-content:center; gap:12px; z-index:5; padding: 0 14px;
+    flex-wrap: wrap;
+  }
+  .action-btn{
+    font-family:'Jua',sans-serif; font-size:14.5px; border:none; border-radius:16px;
+    padding: 13px 20px; cursor:pointer; box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+  }
+  .action-btn.kill{ background: var(--danger); color:#320310; }
+  .action-btn.meeting{ background: var(--accent); color:#3a2c02; }
+  .action-btn:disabled{ opacity:0.3; }
+
+  .dpad{
+    position:absolute; right: max(18px, env(safe-area-inset-right)); bottom: max(90px, env(safe-area-inset-bottom));
+    width:150px; height:150px; z-index:5; display:none;
+  }
+  .dpad.show{ display:block; }
+  .dpad button{
+    position:absolute; width:50px; height:50px; border-radius:14px;
+    background: rgba(31,37,71,0.85); border:1px solid var(--line); color:var(--text);
+    font-size:18px; -webkit-tap-highlight-color: transparent;
+  }
+  .dpad button:active{ background: var(--panel-3); }
+  .dpad .up{ top:0; left:50px; }
+  .dpad .down{ top:100px; left:50px; }
+  .dpad .left{ top:50px; left:0; }
+  .dpad .right{ top:50px; left:100px; }
+
+  /* ---------- Meeting overlay ---------- */
+  .overlay{
+    position:absolute; inset:0; z-index:20; background: rgba(6,8,20,0.86);
+    backdrop-filter: blur(3px); display:flex; align-items:center; justify-content:center;
+    padding: 20px;
+  }
+  .meeting-panel{
+    width:min(94vw, 460px); max-height: 88vh; overflow-y:auto;
+    background: linear-gradient(180deg, var(--panel-2), var(--panel));
+    border:1px solid var(--line); border-radius:20px; padding: 22px 20px;
+  }
+  .meeting-header{ text-align:center; margin-bottom: 14px; }
+  .meeting-timer{ font-size:34px; color: var(--accent); font-family:'Space Mono',monospace; }
+  .vote-row{
+    display:flex; align-items:center; gap:10px; background: var(--panel-3);
+    border:1px solid var(--line); border-radius:12px; padding:9px 10px; margin-bottom:8px;
+  }
+  .vote-row .pname{ flex:1; font-size:14.5px; }
+  .vote-count{ font-family:'Space Mono',monospace; font-size:13px; color:var(--text-dim); min-width:18px; text-align:center; }
+  .vote-row.voted-mine{ border-color: var(--cyan); }
+  .vote-row.dead{ opacity:0.4; }
+
+  .result-panel{ text-align:center; }
+  .result-panel .who{ font-size:22px; margin:10px 0 4px; }
+  .result-panel .verdict{ font-size:15px; color: var(--text-dim); margin-bottom: 6px; }
+
+  .end-panel .banner{ font-size:26px; text-align:center; margin-bottom: 6px; }
+  .end-panel .banner.crew{ color: var(--success); }
+  .end-panel .banner.impostor{ color: var(--danger); }
+
+  ::-webkit-scrollbar{ width:6px; }
+  ::-webkit-scrollbar-thumb{ background: var(--line); border-radius:3px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <canvas id="stars"></canvas>
+
+  <!-- TITLE SCREEN -->
+  <div id="screenTitle" class="panel">
+    <p class="eyebrow">2~8인 · 정체 추리 게임</p>
+    <h1 class="title-logo">🛸 수상한 우주선</h1>
+    <p class="subtitle">친구들과 방을 만들어서 같이 놀아봐! 승무원들 사이에 몰래 숨은 정체불명이 있어.</p>
+
+    <label class="field-label">내 이름</label>
+    <input type="text" id="nameInput" maxlength="8" placeholder="이름을 적어줘 (최대 8글자)" />
+
+    <button class="btn btn-primary" id="btnCreate">🚀 방 만들기</button>
+
+    <label class="field-label">또는 초대받은 코드로 참가</label>
+    <div class="row">
+      <input type="text" id="joinCodeInput" class="code-input" maxlength="4" placeholder="코드" />
+    </div>
+    <button class="btn btn-ghost" id="btnJoin">🔑 코드로 참가하기</button>
+
+    <div id="titleError" class="error-msg hidden"></div>
+    <div id="capWarning" class="notice-msg hidden"></div>
+  </div>
+
+  <!-- LOBBY SCREEN -->
+  <div id="screenLobby" class="panel hidden">
+    <p class="eyebrow">대기실</p>
+    <div class="room-code-display">
+      <div class="code" id="lobbyCode">----</div>
+      <div class="hint">이 코드를 친구들에게 알려줘!</div>
+    </div>
+
+    <button class="btn btn-ghost btn-small" id="btnCopyInvite" style="width:100%;margin-bottom:16px;">🔗 초대 링크 복사하기</button>
+    <div id="inviteCopiedNote" class="notice-msg hidden" style="margin-top:-10px;margin-bottom:16px;">링크를 복사했어요! 문자나 카톡에 붙여넣기 해서 보내줘. 친구가 누르면 코드가 자동으로 입력돼.</div>
+
+    <div class="player-list" id="lobbyPlayerList"></div>
+
+    <div id="lobbyHostControls">
+      <button class="btn btn-primary" id="btnStartGame" disabled>▶ 게임 시작 (최소 3명 필요)</button>
+    </div>
+    <div id="lobbyGuestNote" class="lobby-footer-note hidden">호스트가 게임을 시작하기를 기다리는 중...</div>
+
+    <button class="btn btn-ghost btn-small" id="btnLeaveLobby" style="margin-top:16px;">나가기</button>
+  </div>
+
+  <!-- GAME VIEW -->
+  <div id="gameWrap" class="hidden">
+    <canvas id="mapCanvas"></canvas>
+
+    <div class="hud-top-left" id="hudPlayerList"></div>
+    <div class="role-banner hidden" id="roleBanner"></div>
+
+    <div class="dpad" id="dpad">
+      <button class="up" data-dir="up">▲</button>
+      <button class="down" data-dir="down">▼</button>
+      <button class="left" data-dir="left">◀</button>
+      <button class="right" data-dir="right">▶</button>
+    </div>
+
+    <div class="controls-bottom">
+      <button class="action-btn kill hidden" id="btnKill">🔪 제거하기</button>
+      <button class="action-btn meeting" id="btnMeeting">🚨 긴급회의</button>
+    </div>
+  </div>
+
+  <!-- MEETING OVERLAY -->
+  <div id="overlayMeeting" class="overlay hidden">
+    <div class="meeting-panel">
+      <div class="meeting-header">
+        <p class="eyebrow">긴급회의</p>
+        <div class="meeting-timer mono" id="meetingTimer">20</div>
+        <p class="subtitle" style="margin:6px 0 0;">누가 정체불명인지 투표해봐!</p>
+      </div>
+      <div id="voteList"></div>
+      <div class="vote-row" id="voteSkipRow" style="cursor:pointer;">
+        <div class="pname">🤷 스킵 (모르겠어요)</div>
+        <div class="vote-count mono" id="skipCount">0</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RESULT OVERLAY -->
+  <div id="overlayResult" class="overlay hidden">
+    <div class="meeting-panel result-panel">
+      <p class="eyebrow">투표 결과</p>
+      <div class="who" id="resultWho"></div>
+      <div class="verdict" id="resultVerdict"></div>
+    </div>
+  </div>
+
+  <!-- END OVERLAY -->
+  <div id="overlayEnd" class="overlay hidden">
+    <div class="meeting-panel end-panel">
+      <div class="banner" id="endBanner"></div>
+      <p class="subtitle" id="endSub" style="text-align:center;"></p>
+      <div id="endHostControls"></div>
+      <div id="endGuestNote" class="lobby-footer-note hidden">호스트가 다시 시작하기를 기다리는 중...</div>
+      <button class="btn btn-ghost btn-small" id="btnEndLeave" style="margin-top:14px;width:100%;">방 나가기</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     Firebase SDK (GitHub Pages 에서 자유롭게 불러올 수 있음)
+     ============================================================ -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+
+<script>
+/* ==================================================================
+   ▼▼▼ 여기에 파이어베이스 설정 정보를 붙여넣어 주세요! ▼▼▼
+   파이어베이스 콘솔 → 프로젝트 설정 → 내 앱(웹) 에서 복사한
+   firebaseConfig = { ... } 안의 내용을 그대로 넣으면 됩니다.
+   ================================================================== */
+  var FIREBASE_CONFIG = {
+    apiKey: "AIzaSyAmy7YV1DehEbh_bN8GC0Op6oh3TkiMyNY",
+    authDomain: "strange-spaceship.firebaseapp.com",
+    databaseURL: "https://strange-spaceship-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "strange-spaceship",
+    storageBucket: "strange-spaceship.firebasestorage.app",
+    messagingSenderId: "990167567779",
+    appId: "1:990167567779:web:893b8b987f947bd5701e16"
+  };
+/* ==================================================================
+   ▲▲▲ 여기까지만 바꾸면 됩니다. 아래는 건드리지 마세요! ▲▲▲
+   ================================================================== */
+</script>
+
+<script>
+(function(){
+  "use strict";
+
+  // ============================================================
+  // Starfield background
+  // ============================================================
+  const starsCanvas = document.getElementById('stars');
+  const sctx = starsCanvas.getContext('2d');
+  let stars = [];
+  function resizeStars(){
+    starsCanvas.width = window.innerWidth;
+    starsCanvas.height = window.innerHeight;
+    const count = Math.floor((window.innerWidth * window.innerHeight) / 6000);
+    stars = Array.from({length: count}, () => ({
+      x: Math.random() * starsCanvas.width,
+      y: Math.random() * starsCanvas.height,
+      r: Math.random() * 1.4 + 0.3,
+      p: Math.random() * Math.PI * 2,
+      s: Math.random() * 0.02 + 0.01
+    }));
+  }
+  function drawStars(t){
+    sctx.clearRect(0,0,starsCanvas.width, starsCanvas.height);
+    sctx.fillStyle = '#0a0e1e';
+    sctx.fillRect(0,0,starsCanvas.width, starsCanvas.height);
+    for(const s of stars){
+      const a = 0.4 + 0.6 * Math.abs(Math.sin(s.p + t * s.s));
+      sctx.globalAlpha = a;
+      sctx.fillStyle = '#cfe0ff';
+      sctx.beginPath();
+      sctx.arc(s.x, s.y, s.r, 0, Math.PI*2);
+      sctx.fill();
+    }
+    sctx.globalAlpha = 1;
+    requestAnimationFrame(drawStars);
+  }
+  window.addEventListener('resize', resizeStars);
+  resizeStars();
+  requestAnimationFrame(drawStars);
+
+  // ============================================================
+  // Constants
+  // ============================================================
+  const COLORS = [
+    {id:'red', hex:'#ff5470', name:'빨강'},
+    {id:'blue', hex:'#5c8dff', name:'파랑'},
+    {id:'green', hex:'#48e6a0', name:'초록'},
+    {id:'yellow', hex:'#ffce45', name:'노랑'},
+    {id:'pink', hex:'#ff8fd6', name:'분홍'},
+    {id:'orange', hex:'#ff9a4d', name:'주황'},
+    {id:'purple', hex:'#b98bff', name:'보라'},
+    {id:'cyan', hex:'#5ce1ff', name:'하늘'}
+  ];
+  const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const MAP_W = 1000, MAP_H = 620;
+  const PLAYER_R = 17;
+  const MOVE_SPEED = 260; // px/sec
+  const KILL_RANGE = 60;
+  const KILL_COOLDOWN_MS = 12000;
+  const MEETING_COOLDOWN_MS = 8000;
+  const MEETING_DURATION_MS = 20000;
+
+  const ROOMS = [
+    {name:'식당', x:360, y:40, w:280, h:170},
+    {name:'무기고', x:40, y:40, w:230, h:150},
+    {name:'항법실', x:730, y:40, w:230, h:150},
+    {name:'전기실', x:40, y:410, w:230, h:170},
+    {name:'의무실', x:385, y:420, w:230, h:160},
+    {name:'원자로', x:730, y:400, w:230, h:180}
+  ];
+
+  function randCode(){
+    let s = '';
+    for(let i=0;i<4;i++) s += CODE_CHARS[Math.floor(Math.random()*CODE_CHARS.length)];
+    return s;
+  }
+  function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+  function dist(x1,y1,x2,y2){ return Math.hypot(x1-x2, y1-y2); }
+  function colorHex(id){ const c = COLORS.find(c=>c.id===id); return c ? c.hex : '#8891c2'; }
+
+  // ============================================================
+  // App state
+  // ============================================================
+  const S = {
+    fdb: null,
+    myId: null, myName: '', myColorId: null,
+    roomCode: null, isHost: false,
+    roomData: null,
+    positions: {},
+    unsubRoom: null, unsubPos: null,
+    view: 'title',
+    myPos: {x: MAP_W/2, y: MAP_H/2},
+    keys: {up:false,down:false,left:false,right:false},
+    lastRoleRound: -1,
+    killCooldownUntil: 0,
+    meetingCooldownUntil: 0,
+    lastLoopTs: null,
+    myVoteTarget: null,
+    lastShownResultKey: null,
+    isResolvingMeeting: null
+  };
+
+  const $ = (id) => document.getElementById(id);
+
+  function showError(msg){
+    const el = $('titleError');
+    el.textContent = msg;
+    el.classList.remove('hidden');
+  }
+  function clearError(){ $('titleError').classList.add('hidden'); }
+
+  // ============================================================
+  // Player identity (no account — random id kept in this browser)
+  // ============================================================
+  function getMyId(){
+    let id = null;
+    try{ id = localStorage.getItem('spaceship_pid'); }catch(e){}
+    if(!id){
+      id = 'p' + Math.random().toString(36).slice(2,10) + Date.now().toString(36).slice(-4);
+      try{ localStorage.setItem('spaceship_pid', id); }catch(e){}
+    }
+    return id;
+  }
+
+  // ============================================================
+  // Firebase init
+  // ============================================================
+  function initFirebase(){
+    const cfg = window.FIREBASE_CONFIG || {};
+    if(!cfg.databaseURL || String(cfg.databaseURL).indexOf('여기에') === 0){
+      const w = $('capWarning');
+      w.textContent = '⚠ 아직 파이어베이스 설정이 안 되어 있어요. index.html 파일 위쪽의 FIREBASE_CONFIG 부분에 파이어베이스 설정 정보를 붙여넣어 주세요!';
+      w.classList.remove('hidden');
+      $('btnCreate').disabled = true;
+      $('btnJoin').disabled = true;
+      return false;
+    }
+    try{
+      firebase.initializeApp(cfg);
+      S.fdb = firebase.database();
+      S.myId = getMyId();
+      return true;
+    }catch(e){
+      const w = $('capWarning');
+      w.textContent = '⚠ 파이어베이스 연결에 실패했어요. 설정 정보가 올바른지 확인해줘!';
+      w.classList.remove('hidden');
+      return false;
+    }
+  }
+
+  function roomRef(path){
+    return S.fdb.ref('rooms/' + S.roomCode + (path ? '/'+path : ''));
+  }
+
+  function isImpostor(id, data){
+    data = data || S.roomData;
+    return !!(data && data.impostorMap && data.impostorMap[id]);
+  }
+
+  // ============================================================
+  // Room helpers
+  // ============================================================
+  function pickColorFor(existingPlayers){
+    const used = new Set(Object.values(existingPlayers||{}).map(p=>p.color));
+    const free = COLORS.filter(c=>!used.has(c.id));
+    return (free.length ? free[0] : COLORS[Math.floor(Math.random()*COLORS.length)]).id;
+  }
+
+  async function createRoom(){
+    clearError();
+    const name = $('nameInput').value.trim();
+    if(!name){ showError('이름을 먼저 적어줘!'); return; }
+    if(!S.fdb || !S.myId){ showError('온라인 기능을 사용할 수 없어요.'); return; }
+    setButtonsBusy(true);
+    try{
+      let code = null;
+      for(let i=0;i<6;i++){
+        const candidate = randCode();
+        const snap = await S.fdb.ref('rooms/'+candidate).get();
+        if(!snap.exists()){ code = candidate; break; }
+      }
+      if(!code){ showError('방 코드를 만드는 데 실패했어요. 다시 시도해줘!'); setButtonsBusy(false); return; }
+
+      const color = pickColorFor({});
+      S.myName = name; S.myColorId = color; S.roomCode = code; S.isHost = true;
+
+      await S.fdb.ref('rooms/'+code).set({
+        code, hostId: S.myId, status: 'lobby',
+        players: { [S.myId]: { name, color, alive: true, joinedAt: Date.now() } },
+        impostorMap: null, meeting: null, lastEjected: null, winner: null,
+        round: 0, createdAt: Date.now()
+      });
+      subscribeRoom();
+      enterLobby();
+    }catch(e){
+      showError('방을 만들지 못했어요. 잠시 후 다시 시도해줘!');
+    }
+    setButtonsBusy(false);
+  }
+
+  async function joinRoom(){
+    clearError();
+    const name = $('nameInput').value.trim();
+    const code = $('joinCodeInput').value.trim().toUpperCase();
+    if(!name){ showError('이름을 먼저 적어줘!'); return; }
+    if(code.length !== 4){ showError('코드는 4글자예요.'); return; }
+    if(!S.fdb || !S.myId){ showError('온라인 기능을 사용할 수 없어요.'); return; }
+    setButtonsBusy(true);
+    try{
+      const snap = await S.fdb.ref('rooms/'+code).get();
+      if(!snap.exists()){ showError('그 코드로 된 방을 찾을 수 없어요.'); setButtonsBusy(false); return; }
+      const data = snap.val();
+      const players = data.players || {};
+      if(data.status !== 'lobby' && !players[S.myId]){
+        showError('이미 게임이 시작된 방이에요.'); setButtonsBusy(false); return;
+      }
+      const existingCount = Object.keys(players).length;
+      if(existingCount >= 8 && !players[S.myId]){
+        showError('방이 가득 찼어요 (최대 8명).'); setButtonsBusy(false); return;
+      }
+      const color = players[S.myId] ? players[S.myId].color : pickColorFor(players);
+      S.myName = name; S.myColorId = color; S.roomCode = code; S.isHost = (data.hostId === S.myId);
+
+      await S.fdb.ref('rooms/'+code+'/players/'+S.myId).set({ name, color, alive: true, joinedAt: Date.now() });
+      subscribeRoom();
+      enterLobby();
+    }catch(e){
+      showError('참가하지 못했어요. 코드를 다시 확인해줘!');
+    }
+    setButtonsBusy(false);
+  }
+
+  function setButtonsBusy(busy){
+    $('btnCreate').disabled = busy;
+    $('btnJoin').disabled = busy;
+  }
+
+  function subscribeRoom(){
+    if(S.unsubRoom) S.unsubRoom();
+    if(S.unsubPos) S.unsubPos();
+
+    const rRef = roomRef('');
+    const roomHandler = rRef.on('value', (snap)=>{
+      const prev = S.roomData;
+      S.roomData = snap.val();
+      if(!S.roomData) return;
+      onRoomUpdate(prev, S.roomData);
+    });
+    S.unsubRoom = () => rRef.off('value', roomHandler);
+
+    const pRef = roomRef('pos');
+    const posHandler = pRef.on('value', (snap)=>{
+      S.positions = snap.val() || {};
+    });
+    S.unsubPos = () => pRef.off('value', posHandler);
+
+    // remove my position when I disconnect
+    try{ roomRef('pos/'+S.myId).onDisconnect().remove(); }catch(e){}
+  }
+
+  // ============================================================
+  // View transitions
+  // ============================================================
+  function setView(v){
+    S.view = v;
+    $('screenTitle').classList.toggle('hidden', v!=='title');
+    $('screenLobby').classList.toggle('hidden', v!=='lobby');
+    $('gameWrap').classList.toggle('hidden', !(v==='playing'||v==='meeting'||v==='ended'));
+    $('overlayMeeting').classList.toggle('hidden', v!=='meeting');
+    $('overlayEnd').classList.toggle('hidden', v!=='ended');
+  }
+
+  function enterLobby(){
+    setView('lobby');
+    $('lobbyCode').textContent = S.roomCode;
+    renderLobby();
+    startPresenceLoop();
+  }
+
+  // ============================================================
+  // Lobby rendering
+  // ============================================================
+  function renderLobby(){
+    if(!S.roomData) return;
+    const players = S.roomData.players || {};
+    const list = $('lobbyPlayerList');
+    list.innerHTML = '';
+    const ids = Object.keys(players).sort((a,b)=> (players[a].joinedAt||0) - (players[b].joinedAt||0));
+    for(const id of ids){
+      const p = players[id];
+      const chip = document.createElement('div');
+      chip.className = 'player-chip';
+      chip.innerHTML = `<div class="dot" style="background:${colorHex(p.color)}"></div>
+        <div class="pname">${escapeHtml(p.name)}${id===S.myId?' (나)':''}</div>
+        ${id===S.roomData.hostId ? '<div class="ptag">호스트</div>' : ''}`;
+      list.appendChild(chip);
+    }
+    const count = ids.length;
+    $('lobbyHostControls').classList.toggle('hidden', !S.isHost);
+    $('lobbyGuestNote').classList.toggle('hidden', S.isHost);
+    const startBtn = $('btnStartGame');
+    startBtn.disabled = count < 3;
+    startBtn.textContent = count < 3 ? `▶ 게임 시작 (최소 3명 필요, 현재 ${count}명)` : '▶ 게임 시작';
+  }
+
+  function escapeHtml(s){
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  // ============================================================
+  // Game start (host only)
+  // ============================================================
+  async function startGame(){
+    if(!S.isHost || !S.roomData) return;
+    const ids = Object.keys(S.roomData.players || {});
+    if(ids.length < 3) return;
+    const impostorCount = ids.length >= 7 ? 2 : 1;
+    const shuffled = ids.slice().sort(()=>Math.random()-0.5);
+    const impostorMap = {};
+    shuffled.slice(0, impostorCount).forEach(id => { impostorMap[id] = true; });
+
+    const updates = {};
+    updates['status'] = 'playing';
+    updates['impostorMap'] = impostorMap;
+    updates['meeting'] = null;
+    updates['lastEjected'] = null;
+    updates['winner'] = null;
+    updates['pos'] = null;
+    updates['round'] = (S.roomData.round||0) + 1;
+    for(const id of ids){ updates['players/'+id+'/alive'] = true; }
+    await roomRef('').update(updates);
+  }
+
+  // ============================================================
+  // React to room updates
+  // ============================================================
+  function onRoomUpdate(prev, data){
+    if(S.view === 'lobby'){
+      renderLobby();
+      if(data.status === 'playing') enterGame();
+      return;
+    }
+    if(S.view==='playing' || S.view==='meeting' || S.view==='ended'){
+      renderHudPlayerList();
+      if(data.status === 'meeting' && S.view !== 'meeting'){
+        enterMeeting();
+      } else if(data.status === 'meeting' && S.view === 'meeting'){
+        renderMeeting();
+      } else if(data.status === 'playing' && S.view !== 'playing'){
+        maybeShowResultThenReturn();
+      } else if(data.status === 'ended' && S.view !== 'ended'){
+        maybeShowResultThenEnd();
+      } else if(data.status === 'lobby' && S.view !== 'lobby'){
+        S.lastShownResultKey = null;
+        backToLobbyView();
+      }
+      updateKillButtonVisibility();
+    }
+  }
+
+  // ============================================================
+  // Enter game / role reveal
+  // ============================================================
+  function enterGame(){
+    setView('playing');
+    S.myPos = { x: 100 + Math.random()*(MAP_W-200), y: 100 + Math.random()*(MAP_H-200) };
+    showRoleBanner();
+    renderHudPlayerList();
+    startGameLoop();
+  }
+
+  function myRole(){
+    return isImpostor(S.myId) ? 'impostor' : 'crew';
+  }
+
+  function showRoleBanner(){
+    if(S.lastRoleRound === S.roomData.round){ updateRoleBannerText(); return; }
+    S.lastRoleRound = S.roomData.round;
+    const role = myRole();
+    const banner = $('roleBanner');
+    banner.classList.remove('hidden');
+    banner.className = 'role-banner ' + role;
+    banner.textContent = role === 'impostor' ? '😈 당신은 정체불명입니다! 몰래 승무원을 제거하세요' : '🧑‍🚀 당신은 승무원입니다. 정체불명을 찾아내세요!';
+    setTimeout(()=>{ updateRoleBannerText(); }, 3500);
+  }
+  function updateRoleBannerText(){
+    const role = myRole();
+    const banner = $('roleBanner');
+    banner.className = 'role-banner ' + role;
+    banner.textContent = role === 'impostor' ? '😈 정체불명' : '🧑‍🚀 승무원';
+  }
+
+  function renderHudPlayerList(){
+    if(!S.roomData) return;
+    const players = S.roomData.players || {};
+    const list = $('hudPlayerList');
+    list.innerHTML = '';
+    const ids = Object.keys(players).sort((a,b)=> (players[a].joinedAt||0) - (players[b].joinedAt||0));
+    for(const id of ids){
+      const p = players[id];
+      const chip = document.createElement('div');
+      chip.className = 'hud-chip' + (p.alive ? '' : ' dead') + (id===S.myId ? ' me' : '');
+      chip.innerHTML = `<div class="dot" style="background:${colorHex(p.color)}"></div><span>${escapeHtml(p.name)}${p.alive?'':' 💀'}</span>`;
+      list.appendChild(chip);
+    }
+  }
+
+  // ============================================================
+  // Presence (position broadcast) via Firebase
+  // ============================================================
+  let presenceInterval = null;
+  function startPresenceLoop(){
+    if(presenceInterval) clearInterval(presenceInterval);
+    presenceInterval = setInterval(()=>{
+      if(!S.fdb || !S.roomCode) return;
+      if(!(S.view==='playing'||S.view==='meeting')) return;
+      try{ roomRef('pos/'+S.myId).set({ x: Math.round(S.myPos.x), y: Math.round(S.myPos.y), t: Date.now() }); }catch(e){}
+    }, 120);
+  }
+
+  function getRoomPeers(){
+    const players = (S.roomData && S.roomData.players) || {};
+    const out = [];
+    for(const id in players){
+      if(id === S.myId) continue;
+      const pos = S.positions[id];
+      if(!pos) continue;
+      const p = players[id];
+      out.push({ id, x: pos.x, y: pos.y, name: p.name, color: p.color, alive: p.alive });
+    }
+    return out;
+  }
+
+  // ============================================================
+  // Game loop: movement + rendering
+  // ============================================================
+  const mapCanvas = $('mapCanvas');
+  const mctx = mapCanvas.getContext('2d');
+  let gameLoopRunning = false;
+
+  function resizeMapCanvas(){
+    mapCanvas.width = mapCanvas.clientWidth * devicePixelRatio;
+    mapCanvas.height = mapCanvas.clientHeight * devicePixelRatio;
+  }
+  window.addEventListener('resize', resizeMapCanvas);
+
+  function startGameLoop(){
+    resizeMapCanvas();
+    if(gameLoopRunning) return;
+    gameLoopRunning = true;
+    S.lastLoopTs = performance.now();
+    requestAnimationFrame(gameLoop);
+  }
+
+  function gameLoop(ts){
+    const dt = Math.min(0.05, (ts - S.lastLoopTs)/1000);
+    S.lastLoopTs = ts;
+
+    if(S.view === 'playing'){
+      const alive = S.roomData && S.roomData.players[S.myId] ? S.roomData.players[S.myId].alive : true;
+      if(alive){
+        let dx=0, dy=0;
+        if(S.keys.up) dy -= 1;
+        if(S.keys.down) dy += 1;
+        if(S.keys.left) dx -= 1;
+        if(S.keys.right) dx += 1;
+        if(dx!==0 || dy!==0){
+          const len = Math.hypot(dx,dy);
+          S.myPos.x = clamp(S.myPos.x + (dx/len)*MOVE_SPEED*dt, PLAYER_R, MAP_W-PLAYER_R);
+          S.myPos.y = clamp(S.myPos.y + (dy/len)*MOVE_SPEED*dt, PLAYER_R, MAP_H-PLAYER_R);
+        }
+      }
+    }
+
+    drawMap();
+    if(S.view === 'playing') updateKillButtonVisibility();
+    requestAnimationFrame(gameLoop);
+  }
+
+  function drawMap(){
+    const w = mapCanvas.width, h = mapCanvas.height;
+    const scale = Math.min(w/MAP_W, h/MAP_H);
+    const offX = (w - MAP_W*scale)/2;
+    const offY = (h - MAP_H*scale)/2;
+
+    mctx.save();
+    mctx.fillStyle = '#0d1230';
+    mctx.fillRect(0,0,w,h);
+    mctx.translate(offX, offY);
+    mctx.scale(scale, scale);
+
+    mctx.fillStyle = '#141a3a';
+    mctx.fillRect(0,0,MAP_W,MAP_H);
+    mctx.strokeStyle = 'rgba(92,225,255,0.05)';
+    mctx.lineWidth = 1;
+    for(let gx=0; gx<=MAP_W; gx+=40){ mctx.beginPath(); mctx.moveTo(gx,0); mctx.lineTo(gx,MAP_H); mctx.stroke(); }
+    for(let gy=0; gy<=MAP_H; gy+=40){ mctx.beginPath(); mctx.moveTo(0,gy); mctx.lineTo(MAP_W,gy); mctx.stroke(); }
+
+    for(const r of ROOMS){
+      mctx.fillStyle = '#1c2350';
+      roundRect(mctx, r.x, r.y, r.w, r.h, 14);
+      mctx.fill();
+      mctx.strokeStyle = 'rgba(255,206,69,0.35)';
+      mctx.lineWidth = 2;
+      roundRect(mctx, r.x, r.y, r.w, r.h, 14);
+      mctx.stroke();
+      mctx.fillStyle = '#8891c2';
+      mctx.font = '600 15px "Noto Sans KR", sans-serif';
+      mctx.textAlign = 'left';
+      mctx.fillText(r.name, r.x+12, r.y+22);
+    }
+
+    const peers = getRoomPeers();
+    for(const peer of peers){
+      drawPlayer(peer.x, peer.y, colorHex(peer.color), peer.name, peer.alive);
+    }
+    const myAlive = S.roomData && S.roomData.players[S.myId] ? S.roomData.players[S.myId].alive : true;
+    drawPlayer(S.myPos.x, S.myPos.y, colorHex(S.myColorId), S.myName + ' (나)', myAlive, true);
+
+    mctx.restore();
+  }
+
+  function roundRect(ctx,x,y,w,h,r){
+    ctx.beginPath();
+    ctx.moveTo(x+r,y);
+    ctx.arcTo(x+w,y,x+w,y+h,r);
+    ctx.arcTo(x+w,y+h,x,y+h,r);
+    ctx.arcTo(x,y+h,x,y,r);
+    ctx.arcTo(x,y,x+w,y,r);
+    ctx.closePath();
+  }
+
+  function drawPlayer(x,y,hex,name,alive,isMe){
+    mctx.save();
+    if(!alive) mctx.globalAlpha = 0.35;
+    mctx.beginPath();
+    mctx.arc(x,y,PLAYER_R,0,Math.PI*2);
+    mctx.fillStyle = hex;
+    mctx.fill();
+    mctx.strokeStyle = isMe ? '#5ce1ff' : 'rgba(255,255,255,0.5)';
+    mctx.lineWidth = isMe ? 3 : 2;
+    mctx.stroke();
+    if(alive){
+      mctx.fillStyle = 'rgba(10,14,30,0.6)';
+      roundRect(mctx, x-9, y-6, 18, 9, 4);
+      mctx.fill();
+    } else {
+      mctx.fillStyle = '#fff';
+      mctx.font = '16px sans-serif';
+      mctx.textAlign = 'center';
+      mctx.fillText('💀', x, y+6);
+    }
+    mctx.fillStyle = '#eef0fb';
+    mctx.font = '600 13px "Noto Sans KR", sans-serif';
+    mctx.textAlign = 'center';
+    mctx.fillText(name, x, y-PLAYER_R-8);
+    mctx.restore();
+  }
+
+  // ============================================================
+  // Input: keyboard + dpad
+  // ============================================================
+  window.addEventListener('keydown', (e)=>{
+    if(S.view!=='playing') return;
+    if(['ArrowUp','w','W'].includes(e.key)) S.keys.up = true;
+    if(['ArrowDown','s','S'].includes(e.key)) S.keys.down = true;
+    if(['ArrowLeft','a','A'].includes(e.key)) S.keys.left = true;
+    if(['ArrowRight','d','D'].includes(e.key)) S.keys.right = true;
+  });
+  window.addEventListener('keyup', (e)=>{
+    if(['ArrowUp','w','W'].includes(e.key)) S.keys.up = false;
+    if(['ArrowDown','s','S'].includes(e.key)) S.keys.down = false;
+    if(['ArrowLeft','a','A'].includes(e.key)) S.keys.left = false;
+    if(['ArrowRight','d','D'].includes(e.key)) S.keys.right = false;
+  });
+
+  function isTouchDevice(){
+    return ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+  }
+  if(isTouchDevice()) $('dpad').classList.add('show');
+
+  document.querySelectorAll('#dpad button').forEach(btn=>{
+    const dir = btn.dataset.dir;
+    const set = (v)=> (e)=>{ e.preventDefault(); S.keys[dir]=v; };
+    btn.addEventListener('touchstart', set(true), {passive:false});
+    btn.addEventListener('touchend', set(false), {passive:false});
+    btn.addEventListener('touchcancel', set(false), {passive:false});
+    btn.addEventListener('mousedown', set(true));
+    btn.addEventListener('mouseup', set(false));
+    btn.addEventListener('mouseleave', set(false));
+  });
+
+  // ============================================================
+  // Kill action
+  // ============================================================
+  function nearestAliveTarget(){
+    const peers = getRoomPeers();
+    let best = null, bestD = Infinity;
+    for(const peer of peers){
+      if(!peer.alive) continue;
+      const d = dist(S.myPos.x, S.myPos.y, peer.x, peer.y);
+      if(d < bestD){ bestD = d; best = peer; }
+    }
+    return (best && bestD <= KILL_RANGE) ? best : null;
+  }
+
+  function updateKillButtonVisibility(){
+    const btnKill = $('btnKill');
+    const btnMeeting = $('btnMeeting');
+    if(S.view !== 'playing' || !S.roomData){
+      btnKill.classList.add('hidden');
+      return;
+    }
+    const myAlive = S.roomData.players[S.myId] ? S.roomData.players[S.myId].alive : false;
+    const role = myRole();
+    const now = Date.now();
+    if(role==='impostor' && myAlive){
+      const target = nearestAliveTarget();
+      btnKill.classList.toggle('hidden', !target);
+      btnKill.disabled = now < S.killCooldownUntil;
+      btnKill.dataset.targetId = target ? target.id : '';
+    } else {
+      btnKill.classList.add('hidden');
+    }
+    btnMeeting.disabled = !myAlive || now < S.meetingCooldownUntil || S.roomData.status !== 'playing';
+  }
+
+  async function doKill(){
+    const targetId = $('btnKill').dataset.targetId;
+    if(!targetId || !S.roomData) return;
+    S.killCooldownUntil = Date.now() + KILL_COOLDOWN_MS;
+    const players = {};
+    for(const id in S.roomData.players){ players[id] = { ...S.roomData.players[id] }; }
+    if(players[targetId]) players[targetId].alive = false;
+    const updates = {};
+    updates['players/'+targetId+'/alive'] = false;
+    const outcome = checkWin(players, S.roomData.impostorMap);
+    if(outcome){ updates['status'] = 'ended'; updates['winner'] = outcome; }
+    try{ await roomRef('').update(updates); }catch(e){}
+  }
+
+  function checkWin(players, impostorMap){
+    impostorMap = impostorMap || {};
+    const aliveIds = Object.keys(players).filter(id=>players[id].alive);
+    const aliveImpostors = aliveIds.filter(id=>impostorMap[id]).length;
+    const aliveCrew = aliveIds.length - aliveImpostors;
+    if(aliveImpostors === 0) return 'crew';
+    if(aliveImpostors >= aliveCrew) return 'impostor';
+    return null;
+  }
+
+  // ============================================================
+  // Meeting
+  // ============================================================
+  async function callMeeting(){
+    if(!S.roomData || S.roomData.status!=='playing') return;
+    S.meetingCooldownUntil = Date.now() + MEETING_COOLDOWN_MS;
+    try{
+      await roomRef('').update({
+        status:'meeting',
+        meeting: { calledBy: S.myId, startedAt: Date.now(), votes: null, resolvedBy: null }
+      });
+    }catch(e){}
+  }
+
+  let meetingTickHandle = null;
+  function enterMeeting(){
+    setView('meeting');
+    S.myVoteTarget = null;
+    renderMeeting();
+    if(meetingTickHandle) clearInterval(meetingTickHandle);
+    meetingTickHandle = setInterval(meetingTick, 400);
+  }
+
+  function meetingTick(){
+    if(!S.roomData || !S.roomData.meeting){ return; }
+    const remaining = MEETING_DURATION_MS - (Date.now() - S.roomData.meeting.startedAt);
+    $('meetingTimer').textContent = Math.max(0, Math.ceil(remaining/1000));
+    const players = S.roomData.players;
+    const aliveIds = Object.keys(players).filter(id=>players[id].alive);
+    const votes = S.roomData.meeting.votes || {};
+    const votedCount = aliveIds.filter(id=>votes[id]!==undefined).length;
+    const allVoted = votedCount >= aliveIds.length && aliveIds.length>0;
+    const sameMeeting = S.isResolvingMeeting && S.isResolvingMeeting.at === S.roomData.meeting.startedAt;
+    const canRetry = !sameMeeting || (Date.now() - S.isResolvingMeeting.attemptedAt > 3000);
+    if((remaining <= 0 || allVoted) && canRetry){
+      S.isResolvingMeeting = { at: S.roomData.meeting.startedAt, attemptedAt: Date.now() };
+      tryResolveMeeting();
+    }
+  }
+
+  function renderMeeting(){
+    if(!S.roomData || !S.roomData.meeting) return;
+    const players = S.roomData.players;
+    const votes = S.roomData.meeting.votes || {};
+    const ids = Object.keys(players).sort((a,b)=> (players[a].joinedAt||0)-(players[b].joinedAt||0));
+    const tally = {};
+    let skipCount = 0;
+    for(const voter in votes){
+      const t = votes[voter];
+      if(t === 'skip') skipCount++;
+      else tally[t] = (tally[t]||0)+1;
+    }
+    const list = $('voteList');
+    list.innerHTML = '';
+    const myAlive = players[S.myId] && players[S.myId].alive;
+    for(const id of ids){
+      const p = players[id];
+      const row = document.createElement('div');
+      row.className = 'vote-row' + (p.alive?'':' dead') + (S.myVoteTarget===id?' voted-mine':'');
+      row.innerHTML = `<div class="dot" style="background:${colorHex(p.color)}"></div>
+        <div class="pname">${escapeHtml(p.name)}${id===S.myId?' (나)':''}${p.alive?'':' 💀'}</div>
+        <div class="vote-count mono">${tally[id]||0}</div>`;
+      if(p.alive && myAlive && id!==S.myId){
+        row.style.cursor = 'pointer';
+        row.addEventListener('click', ()=>castVote(id));
+      }
+      list.appendChild(row);
+    }
+    $('skipCount').textContent = skipCount;
+    $('voteSkipRow').className = 'vote-row' + (S.myVoteTarget==='skip'?' voted-mine':'');
+    $('voteSkipRow').style.opacity = myAlive ? '1' : '0.5';
+    $('voteSkipRow').onclick = myAlive ? ()=>castVote('skip') : null;
+  }
+
+  async function castVote(target){
+    if(!S.roomData || !S.roomData.meeting) return;
+    const myAlive = S.roomData.players[S.myId] && S.roomData.players[S.myId].alive;
+    if(!myAlive) return;
+    S.myVoteTarget = target;
+    renderMeeting();
+    try{ await roomRef('meeting/votes/'+S.myId).set(target); }catch(e){}
+  }
+
+  async function tryResolveMeeting(){
+    const resRef = roomRef('meeting/resolvedBy');
+    let txn;
+    try{
+      txn = await resRef.transaction((cur)=> (cur === null || cur === undefined) ? S.myId : undefined);
+    }catch(e){ return; }
+    if(!txn.committed || txn.snapshot.val() !== S.myId) return;
+
+    const snap = await roomRef('').get();
+    if(!snap.exists()) return;
+    const data = snap.val();
+    if(data.status !== 'meeting' || !data.meeting) return;
+
+    const players = {};
+    for(const id in data.players){ players[id] = { ...data.players[id] }; }
+    const votes = data.meeting.votes || {};
+    const tally = {};
+    for(const voter in votes){
+      const t = votes[voter];
+      if(t==='skip') continue;
+      tally[t] = (tally[t]||0)+1;
+    }
+    let ejectedId = null, topCount = 0, tie = false;
+    for(const id in tally){
+      if(tally[id] > topCount){ topCount = tally[id]; ejectedId = id; tie=false; }
+      else if(tally[id] === topCount){ tie = true; }
+    }
+    if(tie) ejectedId = null;
+
+    let wasImpostor = false;
+    if(ejectedId){
+      if(players[ejectedId]) players[ejectedId].alive = false;
+      wasImpostor = isImpostor(ejectedId, data);
+    }
+
+    const outcome = checkWin(players, data.impostorMap);
+    const updates = {};
+    if(ejectedId) updates['players/'+ejectedId+'/alive'] = false;
+    updates['status'] = outcome ? 'ended' : 'playing';
+    updates['meeting'] = null;
+    updates['lastEjected'] = { id: ejectedId || null, wasImpostor, at: Date.now() };
+    if(outcome) updates['winner'] = outcome;
+    try{ await roomRef('').update(updates); }catch(e){}
+  }
+
+  function maybeShowResultThenReturn(){ showResultOverlay(()=>{ setView('playing'); }); }
+  function maybeShowResultThenEnd(){ showResultOverlay(()=>{ enterEnded(); }); }
+
+  function showResultOverlay(after){
+    const le = S.roomData.lastEjected;
+    const key = le ? le.at : 'none';
+    if(S.lastShownResultKey === key){ after(); return; }
+    S.lastShownResultKey = key;
+    if(meetingTickHandle){ clearInterval(meetingTickHandle); meetingTickHandle=null; }
+    S.isResolvingMeeting = null;
+    if(!le || !le.id){
+      $('resultWho').textContent = '아무도 추방되지 않았어요';
+      $('resultVerdict').textContent = '투표가 갈렸거나 스킵이 많았어요.';
+    } else {
+      const p = S.roomData.players[le.id];
+      $('resultWho').textContent = (p ? p.name : '???') + ' 님이 추방되었습니다';
+      $('resultVerdict').textContent = le.wasImpostor ? '😈 정체불명이었습니다!' : '🧑‍🚀 승무원이었습니다...';
+    }
+    $('overlayMeeting').classList.add('hidden');
+    $('overlayResult').classList.remove('hidden');
+    setTimeout(()=>{
+      $('overlayResult').classList.add('hidden');
+      after();
+    }, 3200);
+  }
+
+  // ============================================================
+  // Ended
+  // ============================================================
+  function enterEnded(){
+    setView('ended');
+    const banner = $('endBanner');
+    const winner = S.roomData.winner;
+    banner.className = 'banner ' + (winner==='crew' ? 'crew' : 'impostor');
+    banner.textContent = winner==='crew' ? '🎉 승무원 승리!' : '😈 정체불명 승리!';
+    $('endSub').textContent = winner==='crew' ? '모든 정체불명을 찾아냈어요.' : '정체불명이 승무원 수를 따라잡았어요.';
+
+    const hostControls = $('endHostControls');
+    hostControls.innerHTML = '';
+    $('endGuestNote').classList.toggle('hidden', S.isHost);
+    if(S.isHost){
+      const btn = document.createElement('button');
+      btn.className = 'btn btn-primary';
+      btn.textContent = '🔁 다시 시작';
+      btn.onclick = restartGame;
+      hostControls.appendChild(btn);
+    }
+  }
+
+  async function restartGame(){
+    if(!S.isHost || !S.roomData) return;
+    const updates = {};
+    updates['status'] = 'lobby';
+    updates['impostorMap'] = null;
+    updates['meeting'] = null;
+    updates['lastEjected'] = null;
+    updates['winner'] = null;
+    updates['pos'] = null;
+    for(const id in S.roomData.players){ updates['players/'+id+'/alive'] = true; }
+    await roomRef('').update(updates);
+    S.lastShownResultKey = null;
+  }
+
+  function backToLobbyView(){
+    setView('lobby');
+    renderLobby();
+  }
+
+  // ============================================================
+  // Invite link
+  // ============================================================
+  function buildInviteLink(){
+    try{
+      const url = new URL(window.location.href);
+      url.searchParams.set('join', S.roomCode);
+      return url.toString();
+    }catch(e){ return window.location.href; }
+  }
+
+  async function copyTextFallback(text){
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.select();
+    let ok = false;
+    try{ ok = document.execCommand('copy'); }catch(e){ ok = false; }
+    document.body.removeChild(ta);
+    return ok;
+  }
+
+  async function copyInviteLink(){
+    const link = buildInviteLink();
+    let copied = false;
+    try{
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        await navigator.clipboard.writeText(link); copied = true;
+      }
+    }catch(e){ copied = false; }
+    if(!copied) copied = await copyTextFallback(link);
+    const note = $('inviteCopiedNote');
+    note.textContent = copied
+      ? '링크를 복사했어요! 문자나 카톡에 붙여넣기 해서 보내줘. 친구가 누르면 코드가 자동으로 입력돼.'
+      : '복사가 안 됐어요. 대신 이 코드를 알려줘: ' + S.roomCode;
+    note.classList.remove('hidden');
+    clearTimeout(copyInviteLink._t);
+    copyInviteLink._t = setTimeout(()=> note.classList.add('hidden'), 5000);
+  }
+
+  // ============================================================
+  // Leave
+  // ============================================================
+  function leaveRoom(){
+    try{ if(S.roomCode && S.myId) roomRef('pos/'+S.myId).remove(); }catch(e){}
+    if(S.unsubRoom) S.unsubRoom();
+    if(S.unsubPos) S.unsubPos();
+    if(presenceInterval) clearInterval(presenceInterval);
+    if(meetingTickHandle) clearInterval(meetingTickHandle);
+    S.roomCode = null; S.roomData = null; S.isHost = false; S.lastRoleRound = -1;
+    S.lastShownResultKey = null; S.positions = {};
+    setView('title');
+  }
+
+  // ============================================================
+  // Wire up buttons
+  // ============================================================
+  $('btnCreate').addEventListener('click', createRoom);
+  $('btnJoin').addEventListener('click', joinRoom);
+  $('btnStartGame').addEventListener('click', startGame);
+  $('btnKill').addEventListener('click', doKill);
+  $('btnMeeting').addEventListener('click', callMeeting);
+  $('btnCopyInvite').addEventListener('click', copyInviteLink);
+  $('btnLeaveLobby').addEventListener('click', leaveRoom);
+  $('btnEndLeave').addEventListener('click', leaveRoom);
+  $('joinCodeInput').addEventListener('input', (e)=>{ e.target.value = e.target.value.toUpperCase(); });
+  $('nameInput').addEventListener('keydown', (e)=>{
+    if(e.key !== 'Enter') return;
+    if($('joinCodeInput').value.trim().length === 4) joinRoom(); else createRoom();
+  });
+  $('joinCodeInput').addEventListener('keydown', (e)=>{ if(e.key === 'Enter') joinRoom(); });
+
+  // ============================================================
+  // Boot
+  // ============================================================
+  (function prefillJoinCodeFromUrl(){
+    try{
+      const params = new URLSearchParams(window.location.search);
+      const code = (params.get('join') || '').trim().toUpperCase();
+      if(code.length === 4){ $('joinCodeInput').value = code; $('nameInput').focus(); }
+    }catch(e){}
+  })();
+
+  initFirebase();
+  setView('title');
+})();
+</script>
+</body>
+</html>
