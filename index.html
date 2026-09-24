@@ -1399,11 +1399,45 @@
 
   // Draw an original cute "space jelly" buddy — squishy blob, big eyes,
   // blush cheeks, tiny feet, and a glowing star antenna.
-  function drawCrewmate(ctx, x, y, hex, name, alive, isMe, facing, walk){
+  // 어몽어스 스타일 시체: 눕혀진 몸통 + 뼈다귀
+  function drawCorpse(ctx, x, y, hex, name, isMe){
     const R = PLAYER_R;
     ctx.save();
     ctx.translate(x, y);
-    if(!alive) ctx.globalAlpha = 0.4;
+    // 바닥 그림자
+    ctx.fillStyle = 'rgba(0,0,0,0.28)';
+    ctx.beginPath(); ctx.ellipse(0, R*0.55, R*1.25, R*0.4, 0, 0, Math.PI*2); ctx.fill();
+    // 눕혀진 몸통 (반쪽 콩 모양)
+    const g = ctx.createLinearGradient(0, -R*0.4, 0, R*0.6);
+    g.addColorStop(0, shade(hex, 1.06)); g.addColorStop(1, shade(hex, 0.72));
+    ctx.fillStyle = g;
+    roundRect(ctx, -R*1.25, -R*0.35, R*1.9, R*1.0, R*0.5); ctx.fill();
+    ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+    roundRect(ctx, -R*1.25, -R*0.35, R*1.9, R*1.0, R*0.5); ctx.stroke();
+    // 등 가방
+    ctx.fillStyle = shade(hex, 0.66);
+    roundRect(ctx, R*0.45, -R*0.05, R*0.42, R*0.62, R*0.16); ctx.fill();
+    // 튀어나온 뼈다귀 (몸통 잘린 곳에서 위로)
+    ctx.save();
+    ctx.translate(R*0.5, -R*0.3); ctx.rotate(-0.45);
+    ctx.strokeStyle = '#eef0fb'; ctx.fillStyle = '#eef0fb'; ctx.lineWidth = R*0.2; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -R*0.75); ctx.stroke();
+    ctx.beginPath(); ctx.arc(-R*0.13, -R*0.78, R*0.14, 0, Math.PI*2); ctx.arc(R*0.13, -R*0.78, R*0.14, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(-R*0.13, 0, R*0.14, 0, Math.PI*2); ctx.arc(R*0.13, 0, R*0.14, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+    // 이름표
+    ctx.font = '700 12.5px "Noto Sans KR", sans-serif'; ctx.textAlign = 'center';
+    const tw = ctx.measureText(name).width;
+    ctx.fillStyle = 'rgba(10,14,30,0.55)'; roundRect(ctx, -tw/2 - 6, -R*1.5, tw + 12, 18, 8); ctx.fill();
+    ctx.fillStyle = isMe ? '#5ce1ff' : '#c7cff0'; ctx.fillText(name, 0, -R*1.2 + 4);
+    ctx.restore();
+  }
+
+  function drawCrewmate(ctx, x, y, hex, name, alive, isMe, facing, walk){
+    const R = PLAYER_R;
+    if(!alive){ drawCorpse(ctx, x, y, hex, name, isMe); return; }
+    ctx.save();
+    ctx.translate(x, y);
 
     // squish + bob while walking
     const bob = alive ? Math.abs(Math.sin(walk)) * R*0.10 : 0;
@@ -2213,11 +2247,7 @@
     mctx.restore();
   }
 
-  const KILLFX_DUR = 1500; // ms
-  function partColor(base){
-    const pool = ['#ffffff', '#ff5470', '#ffd0d8', '#ffce45', base, base];
-    return pool[Math.floor(Math.random()*pool.length)];
-  }
+  const KILLFX_DUR = 750; // ms — 어몽어스처럼 빠르고 강렬하게
   function detectDeaths(){
     if(!S.roomData) return;
     const players = S.roomData.players || {};
@@ -2228,27 +2258,21 @@
       if(S.prevAliveMap[id]===true && a===false){
         const pos = (id===S.myId) ? S.myPos : S.positions[id];
         if(pos){
-          const color = colorHex(players[id].color);
-          const parts = [];
-          for(let i=0;i<34;i++){
-            const ang = Math.random()*Math.PI*2;
-            parts.push({
-              a: ang,
-              sp: 90 + Math.random()*380,           // px/sec outward
-              size: 2.5 + Math.random()*5,
-              spin: Math.random()*Math.PI*2,
-              col: partColor(color),
-              shape: Math.random()<0.4 ? 'star' : 'shard'
-            });
+          // 슬래시 방향 (대각선) + 피 방울
+          const ang = -0.6 - Math.random()*0.5;
+          const drops = [];
+          for(let i=0;i<12;i++){
+            const da = ang + Math.PI/2 + (Math.random()-0.5)*2.2;
+            drops.push({ a: da, sp: 120 + Math.random()*260, size: 2 + Math.random()*4 });
           }
-          S.deathFx.push({ x:pos.x, y:pos.y, t:performance.now(), color, parts });
+          S.deathFx.push({ x:pos.x, y:pos.y, t:performance.now(), ang, drops });
         }
       }
       S.prevAliveMap[id] = a;
     }
   }
 
-  // 화려한 킬 이펙트: 섬광 + 다중 충격파 + 파티클 폭발 + 회전 슬래시 + 💥
+  // 어몽어스 스타일 킬 이펙트: 빠른 빨간 칼질 + 번쩍 + 피 방울
   function drawKillFx(fx, now){
     const e = now - fx.t;          // ms
     const t = e/1000;              // sec
@@ -2257,76 +2281,41 @@
     mctx.save();
     mctx.translate(fx.x, fx.y);
 
-    // 1) 중심 섬광 (빠르게 번쩍)
-    if(k < 0.4){
-      const fk = k/0.4;
-      mctx.globalAlpha = (1-fk);
-      const rad = R*2.8*(0.3 + fk);
+    // 1) 붉은 섬광 (아주 짧게)
+    if(k < 0.3){
+      const fk = k/0.3;
+      mctx.globalAlpha = (1-fk)*0.9;
+      const rad = R*2.6*(0.4 + fk);
       const cg = mctx.createRadialGradient(0,0,0, 0,0, rad);
-      cg.addColorStop(0, '#ffffff');
-      cg.addColorStop(0.45, '#ffd0d8');
-      cg.addColorStop(1, 'rgba(255,84,112,0)');
-      mctx.fillStyle = cg;
-      mctx.beginPath(); mctx.arc(0,0, rad, 0, Math.PI*2); mctx.fill();
+      cg.addColorStop(0, '#ffd0d8'); cg.addColorStop(0.5, 'rgba(255,84,112,0.7)'); cg.addColorStop(1, 'rgba(255,84,112,0)');
+      mctx.fillStyle = cg; mctx.beginPath(); mctx.arc(0,0, rad, 0, Math.PI*2); mctx.fill();
     }
 
-    // 2) 다중 충격파 링 (색·타이밍 다르게)
-    const ringCols = ['#ffffff', '#ff5470', '#ffce45'];
-    for(let i=0;i<3;i++){
-      const rk = clamp(k*1.15 - i*0.13, 0, 1);
-      if(rk<=0 || rk>=1) continue;
-      mctx.globalAlpha = (1-rk)*0.85;
-      mctx.strokeStyle = ringCols[i];
-      mctx.lineWidth = 5*(1-rk)+1;
-      mctx.beginPath(); mctx.arc(0,0, 14 + rk*(80+i*26), 0, Math.PI*2); mctx.stroke();
-    }
-
-    // 3) 회전하는 글로우 슬래시 (별 모양 6갈래)
+    // 2) 칼질 슬래시 (빠르게 그어지고 사라짐)
     mctx.save();
-    mctx.rotate(k*4);
-    mctx.shadowColor = '#ff5470';
-    mctx.shadowBlur = 20*(1-k);
-    mctx.strokeStyle = '#ffe0e6';
-    mctx.lineCap = 'round';
-    mctx.globalAlpha = Math.max(0, 1 - k*1.25);
-    mctx.lineWidth = 6*(1-k)+1;
-    const sl = R*2.6*(0.5 + k*0.8);
-    for(let i=0;i<3;i++){
-      mctx.rotate(Math.PI/3);
-      mctx.beginPath(); mctx.moveTo(-sl,0); mctx.lineTo(sl,0); mctx.stroke();
-    }
+    mctx.rotate(fx.ang);
+    const swipe = Math.min(1, k*3);            // 0→1 빠르게 그어짐
+    const fade = Math.max(0, 1 - (k-0.3)/0.7); // 이후 사라짐
+    const len = R*3.2;
+    mctx.globalAlpha = fade;
+    // 흰 칼날 심
+    mctx.strokeStyle = '#ffffff'; mctx.lineCap='round'; mctx.lineWidth = 7*fade + 1;
+    mctx.shadowColor = '#ff5470'; mctx.shadowBlur = 14;
+    mctx.beginPath(); mctx.moveTo(-len, 0); mctx.lineTo(-len + 2*len*swipe, 0); mctx.stroke();
+    // 붉은 잔상
+    mctx.strokeStyle = 'rgba(255,84,112,0.85)'; mctx.lineWidth = 16*fade + 1; mctx.shadowBlur = 0; mctx.globalAlpha = fade*0.6;
+    mctx.beginPath(); mctx.moveTo(-len, 6); mctx.lineTo(-len + 2*len*swipe, 6); mctx.stroke();
     mctx.restore();
 
-    // 4) 파티클 폭발 (별/파편이 사방으로)
-    for(const p of fx.parts){
-      const pa = Math.max(0, 1 - k*1.1);
-      if(pa<=0) continue;
-      const px = Math.cos(p.a)*p.sp*t;
-      const py = Math.sin(p.a)*p.sp*t + 150*t*t; // 살짝 중력
-      const sz = p.size*(1 - k*0.55);
-      if(sz<=0) continue;
-      mctx.save();
-      mctx.globalAlpha = pa;
-      mctx.translate(px, py);
-      mctx.rotate(p.spin + t*7);
-      mctx.fillStyle = p.col;
-      if(p.shape==='star'){
-        mctx.shadowColor = p.col; mctx.shadowBlur = 6;
-        drawStar(mctx, 0, 0, 5, sz*1.4, sz*0.6); mctx.fill();
-      } else {
-        mctx.fillRect(-sz/2, -sz/2, sz, sz*1.6);
-      }
-      mctx.restore();
-    }
-
-    // 5) 튀어오르는 💥
-    if(k < 0.85){
-      mctx.globalAlpha = Math.max(0, 1 - k/0.85);
-      mctx.font = 'bold '+(R*1.8)+'px sans-serif';
-      mctx.textAlign = 'center'; mctx.textBaseline = 'middle';
-      const pop = 1 - Math.pow(1-Math.min(1,k*3),2); // 빠르게 튀어오름
-      mctx.fillText('💥', 0, -R - pop*R*2.6);
-      mctx.textBaseline = 'alphabetic';
+    // 3) 피 방울 튀기기
+    mctx.globalAlpha = 1;
+    for(const d of fx.drops){
+      const pa = Math.max(0, 1 - k*1.2); if(pa<=0) continue;
+      const px = Math.cos(d.a)*d.sp*t;
+      const py = Math.sin(d.a)*d.sp*t + 200*t*t;
+      const sz = d.size*(1 - k*0.5); if(sz<=0) continue;
+      mctx.globalAlpha = pa; mctx.fillStyle = '#ff3355';
+      mctx.beginPath(); mctx.arc(px, py, sz, 0, Math.PI*2); mctx.fill();
     }
 
     mctx.globalAlpha = 1;
