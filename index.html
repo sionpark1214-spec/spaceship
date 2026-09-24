@@ -261,6 +261,20 @@
     -webkit-user-select:none; user-select:none;
   }
   .mg-success{ text-align:center; color:var(--success); font-family:'Jua',sans-serif; font-size:24px; padding:20px 0; }
+  /* 전선 잇기 */
+  .mg-wire-wrap{ position:relative; display:flex; justify-content:space-between; height:190px; margin:12px 4px; }
+  .mg-wire-canvas{ position:absolute; inset:0; pointer-events:none; z-index:0; }
+  .mg-wire-col{ display:flex; flex-direction:column; justify-content:space-between; height:100%; z-index:1; }
+  .mg-nub{ width:38px; height:38px; border-radius:9px; cursor:pointer; border:3px solid rgba(255,255,255,0.25); transition:transform .1s; }
+  .mg-nub:active{ transform:scale(0.92); }
+  .mg-nub.sel{ box-shadow:0 0 0 4px #fff; }
+  .mg-nub.done{ border-color:#fff; opacity:0.95; }
+  .mg-nub.bad{ animation: mgShake .3s; }
+  @keyframes mgShake{ 0%,100%{transform:translateX(0)} 25%{transform:translateX(-5px)} 75%{transform:translateX(5px)} }
+  /* 카드 긁기 */
+  .mg-slot{ position:relative; height:72px; background:var(--panel-3); border:2px solid var(--line); border-radius:12px; margin:14px 0 4px; overflow:hidden; }
+  .mg-slot::after{ content:''; position:absolute; right:16px; top:0; bottom:0; width:3px; background:repeating-linear-gradient(0deg,var(--success) 0 8px,transparent 8px 16px); opacity:0.6; }
+  .mg-card{ position:absolute; left:0; top:9px; width:84px; height:54px; border-radius:9px; background:linear-gradient(135deg,#ffce45,#ff9a4d); color:#3a2c02; display:flex; align-items:center; justify-content:center; font-family:'Jua',sans-serif; font-size:15px; cursor:grab; user-select:none; -webkit-user-select:none; touch-action:none; box-shadow:0 4px 10px rgba(0,0,0,0.4); }
 
   .action-btn.cctv{ background: var(--cyan); color:#04262e; }
   .action-btn.vent{ background:#3a4170; color:var(--text); border:1px solid var(--line); }
@@ -758,21 +772,21 @@
 
   // 방마다 어울리는 미션 이름 + 미니게임 종류 (seq=순서, tap=연타, hold=꾹누르기)
   const ROOM_TASK = {
-    '무기고':{name:'무기 정렬',  game:'seq'},
-    '통신실':{name:'통신 송신',  game:'tap'},
-    '함교':  {name:'항로 조정',  game:'seq'},
-    '항법실':{name:'좌표 입력',  game:'seq'},
-    '산소실':{name:'산소 밸브',  game:'hold'},
-    '전기실':{name:'전선 연결',  game:'seq'},
-    '창고':  {name:'화물 정리',  game:'tap'},
+    '무기고':{name:'소행성 조준',  game:'seq'},
+    '통신실':{name:'데이터 전송',  game:'download'},
+    '함교':  {name:'항로 입력',    game:'seq'},
+    '항법실':{name:'좌표 다운로드',game:'download'},
+    '산소실':{name:'산소 밸브',    game:'hold'},
+    '전기실':{name:'전선 잇기',    game:'wire'},
+    '창고':  {name:'화물 정리',    game:'tap'},
     '식당':  {name:'쓰레기 비우기',game:'tap'},
-    '실험실':{name:'시약 배합',  game:'seq'},
-    '관리실':{name:'서류 정리',  game:'tap'},
-    '엔진실':{name:'엔진 점화',  game:'hold'},
-    '보안실':{name:'CCTV 점검',  game:'seq'},
-    '원자로':{name:'원자로 냉각',game:'hold'},
-    '의무실':{name:'검체 스캔',  game:'hold'},
-    '정원':  {name:'식물 물주기',game:'hold'}
+    '실험실':{name:'전선 잇기',    game:'wire'},
+    '관리실':{name:'ID카드 긁기',  game:'swipe'},
+    '엔진실':{name:'엔진 점화',    game:'hold'},
+    '보안실':{name:'ID카드 긁기',  game:'swipe'},
+    '원자로':{name:'원자로 냉각',  game:'hold'},
+    '의무실':{name:'검체 스캔',    game:'download'},
+    '정원':  {name:'식물 물주기',  game:'hold'}
   };
   // Task spots — one per room (crew walk here and complete a themed mini-game)
   const TASK_SPOTS = ROOMS.map((rm, i) => {
@@ -2031,27 +2045,94 @@
     if(!spot) return;
     S.missionOpen = true;
     S.missionSpotId = spotId;
+    S._mgCleanup = [];
     $('missionRoom').textContent = spot.room + ' 미션';
     $('missionTitle').textContent = spot.name;
     $('overlayMission').classList.remove('hidden');
-    const games = { seq: missionSequence, tap: missionTap, hold: missionHold };
+    const games = { seq: missionSequence, tap: missionTap, hold: missionHold, wire: missionWiring, swipe: missionSwipe, download: missionDownload };
     const game = games[spot.game] || missionTap;
     game();
   }
 
+  function runMgCleanup(){ if(S._mgCleanup){ S._mgCleanup.forEach(fn=>{ try{fn();}catch(e){} }); S._mgCleanup=[]; } }
+
   function closeMission(){
     S.missionOpen = false;
     S.missionSpotId = null;
+    runMgCleanup();
     $('overlayMission').classList.add('hidden');
     $('missionBody').innerHTML = '';
   }
 
   function missionDone(){
     const spotId = S.missionSpotId;
+    runMgCleanup();
     $('missionHint').textContent = '';
     $('missionBody').innerHTML = '<div class="mg-success">✅ 미션 성공!</div>';
     completeTask(spotId);
     setTimeout(closeMission, 900);
+  }
+
+  // 어몽어스: 데이터 전송 (진행바 차오름)
+  function missionDownload(){
+    $('missionHint').textContent = '데이터 전송 중... 기다려줘!';
+    const body = $('missionBody'); body.innerHTML = '';
+    const track = document.createElement('div'); track.className='mg-progress-track';
+    const fill = document.createElement('div'); fill.className='mg-progress-fill'; track.appendChild(fill);
+    const label = document.createElement('div'); label.style.cssText='text-align:center;font-family:"Space Mono",monospace;margin-top:8px;color:var(--cyan);font-size:18px'; label.textContent='0%';
+    body.appendChild(track); body.appendChild(label);
+    const dur=3400, start=performance.now(); let raf=null; let done=false;
+    function tick(){ if(done) return; const e=performance.now()-start; const p=Math.min(1,e/dur); fill.style.width=(p*100)+'%'; label.textContent=Math.floor(p*100)+'%'; if(p>=1){ done=true; missionDone(); return; } raf=requestAnimationFrame(tick); }
+    raf=requestAnimationFrame(tick);
+    S._mgCleanup.push(()=>{ done=true; if(raf)cancelAnimationFrame(raf); });
+  }
+
+  // 어몽어스: ID 카드 긁기 (알맞은 속도로 밀기)
+  function missionSwipe(){
+    $('missionHint').textContent = '카드를 오른쪽 끝까지 주욱 밀어줘!';
+    const body = $('missionBody'); body.innerHTML = '';
+    const slot = document.createElement('div'); slot.className='mg-slot';
+    const card = document.createElement('div'); card.className='mg-card'; card.textContent='💳 ID';
+    slot.appendChild(card); body.appendChild(slot);
+    const msg = document.createElement('div'); msg.style.cssText='text-align:center;margin-top:10px;font-size:14px;color:var(--text-dim)'; body.appendChild(msg);
+    let dragging=false, startX=0, startT=0, curX=0;
+    const maxX=()=> Math.max(0, slot.clientWidth - card.clientWidth - 8);
+    const px=(e)=> (e.touches&&e.touches[0]?e.touches[0].clientX:e.clientX);
+    function down(e){ e.preventDefault(); dragging=true; startX=px(e); startT=performance.now(); }
+    function move(e){ if(!dragging)return; e.preventDefault(); let nx=curX+(px(e)-startX); nx=Math.max(0,Math.min(maxX(),nx)); card.style.left=nx+'px'; }
+    function up(){ if(!dragging)return; dragging=false; const nx=parseFloat(card.style.left)||0; const dur=performance.now()-startT;
+      if(nx>=maxX()-6){ if(dur<200){ msg.textContent='너무 빨라요! 다시 🐢'; card.style.left='0px'; curX=0; }
+        else if(dur>1800){ msg.textContent='너무 느려요! 다시 🐇'; card.style.left='0px'; curX=0; }
+        else { msg.style.color='var(--success)'; msg.textContent='✅ 승인!'; missionDone(); } }
+      else { msg.textContent='끝까지 밀어줘!'; card.style.left='0px'; curX=0; } }
+    card.addEventListener('mousedown',down); card.addEventListener('touchstart',down,{passive:false});
+    window.addEventListener('mousemove',move); window.addEventListener('touchmove',move,{passive:false});
+    window.addEventListener('mouseup',up); window.addEventListener('touchend',up);
+    S._mgCleanup.push(()=>{ window.removeEventListener('mousemove',move); window.removeEventListener('touchmove',move); window.removeEventListener('mouseup',up); window.removeEventListener('touchend',up); });
+  }
+
+  // 어몽어스: 전선 잇기 (같은 색 연결)
+  function missionWiring(){
+    $('missionHint').textContent = '왼쪽 전선을 같은 색 오른쪽에 연결! (톡 → 톡)';
+    const body = $('missionBody'); body.innerHTML = '';
+    const wrap = document.createElement('div'); wrap.className='mg-wire-wrap';
+    const cv = document.createElement('canvas'); cv.className='mg-wire-canvas';
+    const leftCol = document.createElement('div'); leftCol.className='mg-wire-col';
+    const rightCol = document.createElement('div'); rightCol.className='mg-wire-col';
+    const cols = ['#ff5470','#5c8dff','#ffce45','#48e6a0'];
+    const rOrder = cols.slice().sort(()=>Math.random()-0.5);
+    const leftNubs=[], rightNubs=[];
+    cols.forEach(c=>{ const n=document.createElement('div'); n.className='mg-nub'; n.style.background=c; n.dataset.color=c; leftCol.appendChild(n); leftNubs.push(n); });
+    rOrder.forEach(c=>{ const n=document.createElement('div'); n.className='mg-nub'; n.style.background=c; n.dataset.color=c; rightCol.appendChild(n); rightNubs.push(n); });
+    wrap.appendChild(cv); wrap.appendChild(leftCol); wrap.appendChild(rightCol); body.appendChild(wrap);
+    let sel=null; const conns=[];
+    function redraw(){ const rct=wrap.getBoundingClientRect(); cv.width=rct.width; cv.height=rct.height; const ctx=cv.getContext('2d'); ctx.clearRect(0,0,cv.width,cv.height); ctx.lineWidth=6; ctx.lineCap='round';
+      for(const cn of conns){ const a=cn.l.getBoundingClientRect(), b=cn.r.getBoundingClientRect(); ctx.strokeStyle=cn.color; ctx.beginPath(); ctx.moveTo(a.right-rct.left, a.top+a.height/2-rct.top); ctx.lineTo(b.left-rct.left, b.top+b.height/2-rct.top); ctx.stroke(); } }
+    leftNubs.forEach(n=> n.addEventListener('click', ()=>{ if(conns.find(c=>c.l===n))return; leftNubs.forEach(x=>x.classList.remove('sel')); n.classList.add('sel'); sel=n; }));
+    rightNubs.forEach(n=> n.addEventListener('click', ()=>{ if(!sel || conns.find(c=>c.r===n))return; if(n.dataset.color===sel.dataset.color){ conns.push({color:n.dataset.color,l:sel,r:n}); sel.classList.remove('sel'); sel.classList.add('done'); n.classList.add('done'); sel=null; redraw(); if(conns.length===cols.length) missionDone(); } else { n.classList.add('bad'); setTimeout(()=>n.classList.remove('bad'),300); } }));
+    setTimeout(redraw, 60);
+    window.addEventListener('resize', redraw);
+    S._mgCleanup.push(()=> window.removeEventListener('resize', redraw));
   }
 
   // Mini-game 1: press numbers 1..5 in order
