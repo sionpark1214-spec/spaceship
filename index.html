@@ -303,6 +303,16 @@
   .vote-row.voted-mine{ border-color: var(--cyan); }
   .vote-row.dead{ opacity:0.4; }
 
+  /* ---------- Rules ---------- */
+  .rules-body{ max-height:60vh; overflow-y:auto; text-align:left; }
+  .rule-sec{ margin-bottom:14px; }
+  .rule-sec h3{ font-family:'Jua',sans-serif; font-size:16px; color:var(--accent); margin:0 0 6px; }
+  .rule-sec p{ font-size:13.5px; color:var(--text); line-height:1.6; margin:0; }
+  .rule-sec ul{ margin:0; padding-left:20px; }
+  .rule-sec li{ font-size:13.5px; color:var(--text); line-height:1.7; }
+  .rule-sec b.imp{ color:var(--danger); }
+  .rule-sec b.crew{ color:var(--success); }
+
   /* ---------- Room list (server browser) ---------- */
   .room-list-body{ display:flex; flex-direction:column; gap:8px; max-height:52vh; overflow-y:auto; margin-bottom:12px; }
   .room-row{
@@ -350,9 +360,63 @@
       <input type="text" id="joinCodeInput" class="code-input" maxlength="4" placeholder="코드" />
     </div>
     <button class="btn btn-ghost" id="btnJoin">🔑 코드로 참가하기</button>
+    <button class="btn btn-ghost btn-small" id="btnRules" style="width:100%;margin-top:12px;">📖 게임 방법 (규칙서)</button>
 
     <div id="titleError" class="error-msg hidden"></div>
     <div id="capWarning" class="notice-msg hidden"></div>
+  </div>
+
+  <!-- RULES OVERLAY -->
+  <div id="overlayRules" class="overlay hidden">
+    <div class="meeting-panel" style="width:min(94vw,480px);">
+      <div class="meeting-header" style="margin-bottom:8px;">
+        <p class="eyebrow">규칙서</p>
+        <h2 style="margin:2px 0;font-size:24px;">📖 수상한 우주선 게임 방법</h2>
+      </div>
+      <div class="rules-body">
+        <div class="rule-sec">
+          <h3>🎯 목표</h3>
+          <p>승무원들 사이에 몰래 숨어있는 <b class="imp">정체불명</b>을 찾아내는 추리 게임이야!</p>
+        </div>
+        <div class="rule-sec">
+          <h3>🧑‍🚀 승무원 (착한 편)</h3>
+          <ul>
+            <li>방을 돌아다니며 <b>미션</b>을 완료해</li>
+            <li>모든 미션을 다 끝내면 <b class="crew">승무원 승리!</b></li>
+            <li>정체불명을 찾으면 긴급회의에서 투표로 내보내</li>
+          </ul>
+        </div>
+        <div class="rule-sec">
+          <h3>😈 정체불명 (나쁜 편)</h3>
+          <ul>
+            <li>몰래 승무원을 <b class="imp">제거</b>해 (가까이 가면 제거 버튼)</li>
+            <li>제거는 12초 쿨타임이 있어</li>
+            <li>정체불명 수 ≥ 승무원 수가 되면 <b class="imp">정체불명 승리!</b></li>
+            <li>미션하는 척 연기해서 정체를 숨겨</li>
+          </ul>
+        </div>
+        <div class="rule-sec">
+          <h3>🕹️ 조작</h3>
+          <ul>
+            <li>폰: 왼쪽 아래 <b>조이스틱</b>으로 이동</li>
+            <li>컴퓨터: <b>방향키</b> 또는 <b>WASD</b></li>
+          </ul>
+        </div>
+        <div class="rule-sec">
+          <h3>🚨 긴급회의 & 투표</h3>
+          <ul>
+            <li>누구나 <b>긴급회의</b> 버튼으로 회의 소집 (끝난 뒤 18초 쿨타임)</li>
+            <li>모두 모여서 의심되는 사람에게 <b>투표</b></li>
+            <li>표를 가장 많이 받은 사람이 추방돼</li>
+          </ul>
+        </div>
+        <div class="rule-sec">
+          <h3>📹 CCTV</h3>
+          <p>컴퓨터가 있는 방(보안실·항법실 등)에서 <b>CCTV</b> 버튼으로 정해진 카메라 몇 곳을 감시할 수 있어. 누가 어디 있는지 엿볼 수 있지!</p>
+        </div>
+      </div>
+      <button class="btn btn-primary btn-small" id="btnRulesClose" style="width:100%;margin-top:14px;">알겠어!</button>
+    </div>
   </div>
 
   <!-- ROOM LIST OVERLAY -->
@@ -2614,6 +2678,8 @@
   $('btnCreate').addEventListener('click', createRoom);
   $('btnJoin').addEventListener('click', joinRoom);
   $('btnRoomList').addEventListener('click', openRoomList);
+  $('btnRules').addEventListener('click', ()=> $('overlayRules').classList.remove('hidden'));
+  $('btnRulesClose').addEventListener('click', ()=> $('overlayRules').classList.add('hidden'));
   $('btnRoomsRefresh').addEventListener('click', loadRoomList);
   $('btnRoomsClose').addEventListener('click', closeRoomList);
   $('btnStartGame').addEventListener('click', startGame);
