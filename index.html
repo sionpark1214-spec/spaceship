@@ -807,16 +807,21 @@
     }
     const now = Date.now();
     const list = [];
+    const toDelete = [];
     for(const code in rooms){
       const r = rooms[code];
-      if(!r || r.status !== 'lobby') continue;
+      if(!r){ continue; }
       const players = r.players || {};
       const count = Object.keys(players).length;
-      if(count < 1 || count >= 20) continue;
-      if(r.createdAt && (now - r.createdAt) > 6*3600*1000) continue; // 6시간 지난 방 숨김
+      const stale = r.createdAt && (now - r.createdAt) > 3*3600*1000; // 3시간 넘은 방
+      // 끝났거나 / 아무도 없거나 / 오래된 방은 DB에서 삭제
+      if(r.status === 'ended' || count === 0 || stale){ toDelete.push(code); continue; }
+      // 목록에는 '대기실' 상태만 (게임 중인 방은 숨김)
+      if(r.status !== 'lobby' || count >= 20) continue;
       const host = (r.hostId && players[r.hostId]) ? players[r.hostId].name : '???';
       list.push({ code, count, host, createdAt: r.createdAt || 0 });
     }
+    for(const code of toDelete){ try{ S.fdb.ref('rooms/'+code).remove(); }catch(e){} }
     list.sort((a,b)=> b.createdAt - a.createdAt);
     if(list.length === 0){
       body.innerHTML = '<div class="room-empty">지금 열려있는 방이 없어요.<br>직접 방을 만들어봐! 🚀</div>';
@@ -2149,7 +2154,21 @@
   // Leave
   // ============================================================
   function leaveRoom(){
-    try{ if(S.roomCode && S.myId) roomRef('pos/'+S.myId).remove(); }catch(e){}
+    const code = S.roomCode, myId = S.myId;
+    // 방에서 나 자신을 빼고, 아무도 안 남으면 방을 삭제 (빈 방/끝난 방 정리)
+    if(code && myId && S.fdb){
+      try{ S.fdb.ref('rooms/'+code+'/pos/'+myId).remove(); }catch(e){}
+      const others = (S.roomData && S.roomData.players)
+        ? Object.keys(S.roomData.players).filter(id => id !== myId) : [];
+      if(others.length === 0){
+        S.fdb.ref('rooms/'+code).remove().catch(()=>{});
+      } else {
+        const upd = {};
+        upd['players/'+myId] = null;
+        if(S.roomData && S.roomData.hostId === myId) upd['hostId'] = others[0]; // 호스트 넘기기
+        S.fdb.ref('rooms/'+code).update(upd).catch(()=>{});
+      }
+    }
     if(S.unsubRoom) S.unsubRoom();
     if(S.unsubPos) S.unsubPos();
     if(presenceInterval) clearInterval(presenceInterval);
