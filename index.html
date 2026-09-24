@@ -263,6 +263,8 @@
   .mg-success{ text-align:center; color:var(--success); font-family:'Jua',sans-serif; font-size:24px; padding:20px 0; }
 
   .action-btn.cctv{ background: var(--cyan); color:#04262e; }
+  .action-btn.report{ background:#ff3355; color:#fff; animation: reportPulse 0.7s ease-in-out infinite; }
+  @keyframes reportPulse{ 0%,100%{ transform:scale(1); box-shadow:0 8px 20px rgba(255,51,85,0.4);} 50%{ transform:scale(1.06); box-shadow:0 8px 28px rgba(255,51,85,0.7);} }
 
   /* ---------- Joystick ---------- */
   .joystick{
@@ -403,9 +405,10 @@
           </ul>
         </div>
         <div class="rule-sec">
-          <h3>🚨 긴급회의 & 투표</h3>
+          <h3>🚨 긴급회의 & 시체 신고 & 투표</h3>
           <ul>
             <li>누구나 <b>긴급회의</b> 버튼으로 회의 소집 (끝난 뒤 18초 쿨타임)</li>
+            <li>시체를 발견하면 가까이 가서 <b class="imp">시체 신고</b> → 바로 회의!</li>
             <li>모두 모여서 의심되는 사람에게 <b>투표</b></li>
             <li>표를 가장 많이 받은 사람이 추방돼</li>
           </ul>
@@ -476,6 +479,7 @@
     </div>
 
     <div class="controls-bottom">
+      <button class="action-btn report hidden" id="btnReport">🚨 시체 신고</button>
       <button class="action-btn cctv hidden" id="btnCctv">📹 CCTV</button>
       <button class="action-btn task hidden" id="btnTask">🛠 미션</button>
       <button class="action-btn kill hidden" id="btnKill">🔪 제거하기</button>
@@ -512,7 +516,7 @@
   <div id="overlayMeeting" class="overlay hidden">
     <div class="meeting-panel">
       <div class="meeting-header">
-        <p class="eyebrow">긴급회의</p>
+        <p class="eyebrow" id="meetingEyebrow">긴급회의</p>
         <div class="meeting-timer mono" id="meetingTimer">20</div>
         <p class="subtitle" style="margin:6px 0 0;">누가 정체불명인지 투표해봐!</p>
       </div>
@@ -645,6 +649,7 @@
   const MEETING_COOLDOWN_MS = 18000; // 회의 끝난 뒤 다음 회의까지 쿨타임
   const MEETING_DURATION_MS = 25000;
   const TASK_RANGE = 60;
+  const REPORT_RANGE = 80;
   const TASKS_PER_PLAYER = 5;
   const VIEW_UNITS = 1050;   // 화면에 한 번에 보이는 월드 폭(대략) — 카메라 확대
   const LOOK_AHEAD = 130;    // 움직이는 쪽을 더 보여주는 거리 (너무 크면 멈출 때 흔들림)
@@ -1815,10 +1820,25 @@
     return (best && bestD <= TASK_RANGE) ? best : null;
   }
 
+  // 근처의 (아직 신고 안 된) 시체 찾기
+  function nearestBody(){
+    const players = S.roomData.players || {};
+    let best=null, bestD=Infinity;
+    for(const id in players){
+      const p = players[id];
+      if(p.alive || p.reported || id===S.myId) continue;
+      const pos = S.positions[id];
+      if(!pos) continue;
+      const d = dist(S.myPos.x, S.myPos.y, pos.x, pos.y);
+      if(d < bestD){ bestD = d; best = id; }
+    }
+    return (best && bestD <= REPORT_RANGE) ? best : null;
+  }
+
   function updateKillButtonVisibility(){
-    const btnKill = $('btnKill'), btnMeeting = $('btnMeeting'), btnTask = $('btnTask'), btnCctv = $('btnCctv');
+    const btnKill = $('btnKill'), btnMeeting = $('btnMeeting'), btnTask = $('btnTask'), btnCctv = $('btnCctv'), btnReport = $('btnReport');
     if(S.view !== 'playing' || !S.roomData){
-      btnKill.classList.add('hidden'); btnTask.classList.add('hidden'); btnCctv.classList.add('hidden');
+      btnKill.classList.add('hidden'); btnTask.classList.add('hidden'); btnCctv.classList.add('hidden'); btnReport.classList.add('hidden');
       return;
     }
     const me = S.roomData.players[S.myId];
@@ -1847,6 +1867,11 @@
     const rm = roomAt(S.myPos.x, S.myPos.y);
     const canCctv = myAlive && !S.missionOpen && rm && CCTV_ROOMS.includes(rm.name);
     btnCctv.classList.toggle('hidden', !canCctv);
+
+    // 시체 신고 버튼 (근처에 신고 안 된 시체가 있을 때)
+    const bodyId = (myAlive && !S.missionOpen) ? nearestBody() : null;
+    if(bodyId){ btnReport.classList.remove('hidden'); btnReport.dataset.bodyId = bodyId; }
+    else { btnReport.classList.add('hidden'); }
 
     // meeting button (shared cooldown countdown)
     const nextAt = S.roomData.nextMeetingAt || 0;
@@ -2404,8 +2429,24 @@
     try{
       await roomRef('').update({
         status:'meeting',
-        meeting: { calledBy: S.myId, startedAt: Date.now(), votes: null, resolvedBy: null }
+        meeting: { calledBy: S.myId, startedAt: Date.now(), votes: null, resolvedBy: null, byReport: false }
       });
+    }catch(e){}
+  }
+
+  // 시체 신고 → 즉시 회의 (쿨타임 무시)
+  async function doReport(){
+    if(!S.roomData || S.roomData.status!=='playing') return;
+    const me = S.roomData.players[S.myId];
+    if(me && !me.alive) return;
+    const bodyId = $('btnReport').dataset.bodyId;
+    try{
+      const updates = {
+        status:'meeting',
+        meeting: { calledBy: S.myId, startedAt: Date.now(), votes: null, resolvedBy: null, byReport: true }
+      };
+      if(bodyId) updates['players/'+bodyId+'/reported'] = true;
+      await roomRef('').update(updates);
     }catch(e){}
   }
 
@@ -2413,6 +2454,8 @@
   function enterMeeting(){
     setView('meeting');
     S.myVoteTarget = null;
+    const byReport = S.roomData && S.roomData.meeting && S.roomData.meeting.byReport;
+    $('meetingEyebrow').textContent = byReport ? '🚨 시체 발견!' : '긴급회의';
     renderMeeting();
     if(meetingTickHandle) clearInterval(meetingTickHandle);
     meetingTickHandle = setInterval(meetingTick, 400);
@@ -2520,6 +2563,8 @@
     updates['meeting'] = null;
     updates['lastEjected'] = { id: ejectedId || null, wasImpostor, at: Date.now() };
     updates['nextMeetingAt'] = Date.now() + MEETING_COOLDOWN_MS; // 회의 후 쿨타임 시작
+    // 회의가 끝나면 모든 시체는 이미 발견된 것으로 처리 (재신고 방지)
+    for(const id in data.players){ if(!data.players[id].alive) updates['players/'+id+'/reported'] = true; }
     if(outcome) updates['winner'] = outcome;
     try{ await roomRef('').update(updates); }catch(e){}
   }
@@ -2674,6 +2719,7 @@
   $('btnStartGame').addEventListener('click', startGame);
   $('btnKill').addEventListener('click', doKill);
   $('btnMeeting').addEventListener('click', callMeeting);
+  $('btnReport').addEventListener('click', doReport);
   $('btnTask').addEventListener('click', openMission);
   $('btnMissionClose').addEventListener('click', closeMission);
   $('btnCctv').addEventListener('click', openCctv);
