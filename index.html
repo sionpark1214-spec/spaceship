@@ -263,7 +263,11 @@
   .mg-success{ text-align:center; color:var(--success); font-family:'Jua',sans-serif; font-size:24px; padding:20px 0; }
 
   .action-btn.cctv{ background: var(--cyan); color:#04262e; }
+  .action-btn.vent{ background:#3a4170; color:var(--text); border:1px solid var(--line); }
   .action-btn.report{ background:#ff3355; color:#fff; animation: reportPulse 0.7s ease-in-out infinite; }
+  .vent-dest{ display:flex; align-items:center; gap:10px; background:var(--panel-3); border:1px solid var(--line); border-radius:12px; padding:12px 14px; margin-bottom:8px; cursor:pointer; font-size:15px; }
+  .vent-dest:active{ transform:scale(0.98); }
+  .vent-dest:hover{ border-color:var(--cyan); }
   @keyframes reportPulse{ 0%,100%{ transform:scale(1); box-shadow:0 8px 20px rgba(255,51,85,0.4);} 50%{ transform:scale(1.06); box-shadow:0 8px 28px rgba(255,51,85,0.7);} }
 
   /* ---------- Joystick ---------- */
@@ -406,6 +410,7 @@
             <li>제거는 12초 쿨타임이 있어</li>
             <li>정체불명 수 ≥ 승무원 수가 되면 <b class="imp">정체불명 승리!</b></li>
             <li>미션하는 척 연기해서 정체를 숨겨</li>
+            <li>🕳 <b>환풍구(벤트)</b>로 순간이동 & 숨기 (정체불명만!)</li>
           </ul>
         </div>
         <div class="rule-sec">
@@ -491,10 +496,24 @@
 
     <div class="controls-bottom">
       <button class="action-btn report hidden" id="btnReport">🚨 시체 신고</button>
+      <button class="action-btn vent hidden" id="btnVent">🕳 벤트</button>
       <button class="action-btn cctv hidden" id="btnCctv">📹 CCTV</button>
       <button class="action-btn task hidden" id="btnTask">🛠 미션</button>
       <button class="action-btn kill hidden" id="btnKill">🔪 제거하기</button>
       <button class="action-btn meeting" id="btnMeeting">🚨 긴급회의</button>
+    </div>
+  </div>
+
+  <!-- VENT OVERLAY (impostor) -->
+  <div id="overlayVent" class="overlay hidden">
+    <div class="meeting-panel" style="width:min(90vw,380px);">
+      <div class="meeting-header">
+        <p class="eyebrow">🕳 환풍구</p>
+        <h2 style="margin:2px 0;font-size:20px;">어디로 이동할까?</h2>
+        <p class="subtitle" style="margin:4px 0 0;">벤트 안에서는 다른 사람에게 안 보여요</p>
+      </div>
+      <div id="ventList"></div>
+      <button class="btn btn-ghost btn-small" id="btnVentExit" style="width:100%;margin-top:12px;">🚪 벤트에서 나가기</button>
     </div>
   </div>
 
@@ -716,6 +735,18 @@
   }
   // 컴퓨터(모니터)가 있는 방에서 CCTV 사용 가능
   const CCTV_ROOMS = ['보안실','항법실','관리실','통신실'];
+  // 환풍구(벤트) — 임포스터 전용 순간이동, 모두 연결됨
+  const VENT_ROOMS = ['무기고','전기실','원자로','항법실','통신실','의무실'];
+  const VENT_RANGE = 58;
+  const VENTS = VENT_ROOMS.map((name, i) => {
+    const r = ROOMS.find(rm => rm.name === name);
+    return { id: 'v'+i, room: name, x: r.x + 74, y: r.y + r.h - 64 };
+  });
+  function nearestVent(){
+    let best=null, bestD=Infinity;
+    for(const v of VENTS){ const d = dist(S.myPos.x, S.myPos.y, v.x, v.y); if(d<bestD){ bestD=d; best=v; } }
+    return (best && bestD <= VENT_RANGE) ? best : null;
+  }
 
   // 방마다 어울리는 미션 이름 + 미니게임 종류 (seq=순서, tap=연타, hold=꾹누르기)
   const ROOM_TASK = {
@@ -1009,6 +1040,7 @@
     $('overlayEnd').classList.toggle('hidden', v!=='ended');
     if(v!=='playing' && S.missionOpen) closeMission();
     if(v!=='playing' && S.cctvOpen) closeCctv();
+    if(v!=='playing' && S.vented) exitVent();
   }
 
   function enterLobby(){
@@ -1165,6 +1197,7 @@
     S.moving = false; S.lastMoveDir = { x: 0, y: 0 };
     S.missionOpen = false;
     S.cctvOpen = false;
+    S.vented = false;
     S.deathFx = [];
     showRoleBanner();
     renderHudPlayerList();
@@ -1216,7 +1249,7 @@
     presenceInterval = setInterval(()=>{
       if(!S.fdb || !S.roomCode) return;
       if(!(S.view==='playing'||S.view==='meeting')) return;
-      try{ roomRef('pos/'+S.myId).set({ x: Math.round(S.myPos.x), y: Math.round(S.myPos.y), t: Date.now() }); }catch(e){}
+      try{ roomRef('pos/'+S.myId).set({ x: Math.round(S.myPos.x), y: Math.round(S.myPos.y), t: Date.now(), hidden: S.vented?1:0 }); }catch(e){}
     }, 120);
   }
 
@@ -1227,6 +1260,7 @@
       if(id === S.myId) continue;
       const pos = S.positions[id];
       if(!pos) continue;
+      if(pos.hidden && players[id].alive) continue; // 벤트 안에 숨은 사람은 안 보임
       const p = players[id];
       out.push({ id, x: pos.x, y: pos.y, name: p.name, color: p.color, alive: p.alive });
     }
@@ -1261,7 +1295,7 @@
     if(S.view === 'playing'){
       const alive = S.roomData && S.roomData.players[S.myId] ? S.roomData.players[S.myId].alive : true;
       S.moving = false;
-      if(alive && !S.missionOpen && !S.cctvOpen){
+      if(alive && !S.missionOpen && !S.cctvOpen && !S.vented){
         let dx=0, dy=0;
         if(S.keys.up) dy -= 1;
         if(S.keys.down) dy += 1;
@@ -1369,6 +1403,10 @@
       const done = myTasks[spot.id] === true;
       drawTaskSpot(spot.x, spot.y, mine, done, nowT);
     }
+
+    // 환풍구 (임포스터에게 강조)
+    const showVent = !!(S.roomData.impostorMap && S.roomData.impostorMap[S.myId]);
+    for(const v of VENTS){ drawVent(v.x, v.y, showVent); }
 
     // detect deaths for kill effects
     detectDeaths();
@@ -1854,9 +1892,9 @@
   }
 
   function updateKillButtonVisibility(){
-    const btnKill = $('btnKill'), btnMeeting = $('btnMeeting'), btnTask = $('btnTask'), btnCctv = $('btnCctv'), btnReport = $('btnReport');
+    const btnKill = $('btnKill'), btnMeeting = $('btnMeeting'), btnTask = $('btnTask'), btnCctv = $('btnCctv'), btnReport = $('btnReport'), btnVent = $('btnVent');
     if(S.view !== 'playing' || !S.roomData){
-      btnKill.classList.add('hidden'); btnTask.classList.add('hidden'); btnCctv.classList.add('hidden'); btnReport.classList.add('hidden');
+      btnKill.classList.add('hidden'); btnTask.classList.add('hidden'); btnCctv.classList.add('hidden'); btnReport.classList.add('hidden'); btnVent.classList.add('hidden');
       return;
     }
     const me = S.roomData.players[S.myId];
@@ -1890,6 +1928,11 @@
     const bodyId = (myAlive && !S.missionOpen) ? nearestBody() : null;
     if(bodyId){ btnReport.classList.remove('hidden'); btnReport.dataset.bodyId = bodyId; }
     else { btnReport.classList.add('hidden'); }
+
+    // 벤트 버튼 (임포스터가 환풍구 위에 있을 때)
+    const vent = (role==='impostor' && myAlive && !S.missionOpen && !S.vented) ? nearestVent() : null;
+    btnVent.classList.toggle('hidden', !vent);
+    if(vent) btnVent.dataset.ventId = vent.id;
 
     // meeting button (shared cooldown countdown)
     const nextAt = S.roomData.nextMeetingAt || 0;
@@ -2265,6 +2308,22 @@
     mctx.restore();
   }
 
+  function drawVent(x, y, highlight){
+    mctx.save();
+    mctx.translate(x, y);
+    const w = 40, h = 30;
+    mctx.fillStyle = '#20264a';
+    roundRect(mctx, -w/2, -h/2, w, h, 5); mctx.fill();
+    mctx.strokeStyle = highlight ? 'rgba(255,84,112,0.9)' : '#4a55a0';
+    mctx.lineWidth = highlight ? 3 : 2;
+    roundRect(mctx, -w/2, -h/2, w, h, 5); mctx.stroke();
+    // 창살
+    mctx.strokeStyle = highlight ? 'rgba(255,150,170,0.9)' : '#5a67a8';
+    mctx.lineWidth = 3;
+    for(let i=-1;i<=1;i++){ mctx.beginPath(); mctx.moveTo(i*11, -h/2+5); mctx.lineTo(i*11, h/2-5); mctx.stroke(); }
+    mctx.restore();
+  }
+
   // ---- draw helpers: task spots + kill effects ----
   function drawTaskSpot(x, y, mine, done, t){
     mctx.save();
@@ -2366,6 +2425,40 @@
   }
 
   // ============================================================
+  // 환풍구(벤트) — 임포스터 전용 순간이동
+  // ============================================================
+  function enterVent(){
+    const vid = $('btnVent').dataset.ventId;
+    const v = VENTS.find(x=>x.id===vid); if(!v) return;
+    S.vented = true;
+    S.myPos = { x: v.x, y: v.y };
+    renderVentList();
+    $('overlayVent').classList.remove('hidden');
+  }
+  function renderVentList(){
+    const list = $('ventList'); list.innerHTML = '';
+    // 내가 있는 곳에서 가장 가까운 벤트 제외한 나머지로 이동
+    const here = VENTS.reduce((a,v)=> dist(S.myPos.x,S.myPos.y,v.x,v.y) < dist(S.myPos.x,S.myPos.y,a.x,a.y) ? v : a, VENTS[0]);
+    for(const v of VENTS){
+      if(v.id === here.id) continue;
+      const row = document.createElement('div');
+      row.className = 'vent-dest';
+      row.innerHTML = '🕳 <b>'+escapeHtml(v.room)+'</b> 로 이동';
+      row.addEventListener('click', ()=> ventTo(v.id));
+      list.appendChild(row);
+    }
+  }
+  function ventTo(vid){
+    const v = VENTS.find(x=>x.id===vid); if(!v) return;
+    S.myPos = { x: v.x, y: v.y };
+    renderVentList(); // 새 위치 기준으로 목록 갱신
+  }
+  function exitVent(){
+    S.vented = false;
+    $('overlayVent').classList.add('hidden');
+  }
+
+  // ============================================================
   // CCTV (보안 카메라) — 컴퓨터 있는 방에서 전체 맵을 실시간 감시
   // ============================================================
   let cctvRAF = null;
@@ -2416,6 +2509,7 @@
         const p = players[id];
         const pos = (id===S.myId) ? S.myPos : S.positions[id];
         if(!pos) continue;
+        if(pos.hidden && p.alive && id!==S.myId) continue; // 벤트에 숨은 사람 제외
         if(pos.x<room.x || pos.x>room.x+room.w || pos.y<room.y || pos.y>room.y+room.h) continue;
         cctvCtx.globalAlpha = p.alive ? 1 : 0.35;
         cctvCtx.fillStyle = colorHex(p.color);
@@ -2782,6 +2876,8 @@
   $('btnKill').addEventListener('click', doKill);
   $('btnMeeting').addEventListener('click', callMeeting);
   $('btnReport').addEventListener('click', doReport);
+  $('btnVent').addEventListener('click', enterVent);
+  $('btnVentExit').addEventListener('click', exitVent);
   $('chatSend').addEventListener('click', sendChat);
   $('chatInput').addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); sendChat(); } });
   $('btnTask').addEventListener('click', openMission);
