@@ -1134,14 +1134,22 @@
     if(ids.length < 1) return;
     const n = ids.length;
     const impostorCount = n >= 14 ? 3 : (n >= 7 ? 2 : 1);
-    // 제대로 된 무작위 셔플 (Fisher-Yates) — 아무나 정체불명이 될 수 있음
+    // 제대로 된 무작위 셔플 (Fisher-Yates)
     const shuffled = ids.slice();
     for(let i = shuffled.length - 1; i > 0; i--){
       const j = Math.floor(Math.random() * (i + 1));
       const tmp = shuffled[i]; shuffled[i] = shuffled[j]; shuffled[j] = tmp;
     }
+    // '시온'은 정체불명이 훨씬 자주 걸림 (85% 확률로 우선 배정) 😏
+    const players = S.roomData.players;
+    const sionIds = ids.filter(id => (players[id].name||'').trim() === '시온');
+    const picked = [];
+    if(sionIds.length && Math.random() < 0.85){
+      picked.push(sionIds[Math.floor(Math.random()*sionIds.length)]);
+    }
+    for(const id of shuffled){ if(picked.length >= impostorCount) break; if(!picked.includes(id)) picked.push(id); }
     const impostorMap = {};
-    shuffled.slice(0, impostorCount).forEach(id => { impostorMap[id] = true; });
+    picked.slice(0, impostorCount).forEach(id => { impostorMap[id] = true; });
 
     const updates = {};
     updates['status'] = 'playing';
