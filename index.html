@@ -556,7 +556,7 @@
       <div class="meeting-header">
         <p class="eyebrow" id="meetingEyebrow">긴급회의</p>
         <div class="meeting-timer mono" id="meetingTimer">20</div>
-        <p class="subtitle" style="margin:6px 0 0;">누가 정체불명인지 투표해봐!</p>
+        <p class="subtitle" id="meetingSub" style="margin:6px 0 0;">누가 정체불명인지 투표해봐!</p>
       </div>
       <div id="voteList"></div>
       <div class="vote-row" id="voteSkipRow" style="cursor:pointer;">
@@ -692,7 +692,7 @@
   const KILL_RANGE = 64;
   const KILL_COOLDOWN_MS = 12000;
   const MEETING_COOLDOWN_MS = 18000; // 회의 끝난 뒤 다음 회의까지 쿨타임
-  const MEETING_DURATION_MS = 25000;
+  const MEETING_DURATION_MS = 20000;
   const TASK_RANGE = 60;
   const REPORT_RANGE = 80;
   const TASKS_PER_PLAYER = 5;
@@ -2709,18 +2709,28 @@
     const list = $('voteList');
     list.innerHTML = '';
     const myAlive = players[S.myId] && players[S.myId].alive;
+    const aliveIds = ids.filter(id=>players[id].alive);
+    const votedCount = aliveIds.filter(id=>votes[id]!==undefined).length;
     for(const id of ids){
       const p = players[id];
       const row = document.createElement('div');
       row.className = 'vote-row' + (p.alive?'':' dead') + (S.myVoteTarget===id?' voted-mine':'');
+      const votedMark = (p.alive && votes[id]!==undefined) ? '<span style="color:var(--success);font-size:12px;">✓ 투표함</span>' : '';
       row.innerHTML = `<div class="dot" style="background:${colorHex(p.color)}"></div>
-        <div class="pname">${escapeHtml(p.name)}${id===S.myId?' (나)':''}${p.alive?'':' 💀'}</div>
+        <div class="pname">${escapeHtml(p.name)}${id===S.myId?' (나)':''}${p.alive?'':' 💀'} ${votedMark}</div>
         <div class="vote-count mono">${tally[id]||0}</div>`;
       if(p.alive && myAlive && id!==S.myId){
         row.style.cursor = 'pointer';
         row.addEventListener('click', ()=>castVote(id));
       }
       list.appendChild(row);
+    }
+    const subEl = $('meetingSub');
+    if(subEl){
+      subEl.textContent = myAlive
+        ? (S.myVoteTarget ? ('투표 완료! ('+votedCount+'/'+aliveIds.length+'명) · 모두 하면 바로 끝나요')
+                          : ('누구를 의심해? 눌러서 투표! ('+votedCount+'/'+aliveIds.length+'명 완료)'))
+        : ('유령은 관전만 · '+votedCount+'/'+aliveIds.length+'명 투표함');
     }
     $('skipCount').textContent = skipCount;
     $('voteSkipRow').className = 'vote-row' + (S.myVoteTarget==='skip'?' voted-mine':'');
