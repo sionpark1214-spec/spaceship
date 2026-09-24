@@ -133,6 +133,22 @@
 
   .lobby-footer-note{ font-size:12px; color:var(--text-dim); text-align:center; margin-top:14px; line-height:1.6; }
 
+  /* ---------- Color picker ---------- */
+  .picker-label{ font-size:12px; color:var(--text-dim); text-align:center; margin: 14px 0 8px; }
+  .color-picker{ display:flex; flex-wrap:wrap; gap:9px; justify-content:center; margin-bottom: 6px; }
+  .swatch{
+    width:30px; height:30px; border-radius:50%; padding:0;
+    border:2px solid rgba(255,255,255,0.25); cursor:pointer; position:relative;
+    transition: transform .1s;
+  }
+  .swatch:active{ transform: scale(0.9); }
+  .swatch.mine{ border-color: var(--cyan); box-shadow: 0 0 0 2px var(--cyan), 0 0 10px rgba(92,225,255,0.5); }
+  .swatch.taken{ opacity:0.25; cursor:not-allowed; }
+  .swatch.taken::after{
+    content:'✕'; position:absolute; inset:0; display:flex; align-items:center;
+    justify-content:center; font-size:13px; color:#fff; font-weight:700;
+  }
+
   /* ---------- Game view ---------- */
   #gameWrap{ position:fixed; inset:0; z-index:1; }
   #mapCanvas{ position:absolute; inset:0; width:100%; height:100%; display:block; touch-action:none; }
@@ -261,6 +277,9 @@
     <div id="inviteCopiedNote" class="notice-msg hidden" style="margin-top:-10px;margin-bottom:16px;">링크를 복사했어요! 문자나 카톡에 붙여넣기 해서 보내줘. 친구가 누르면 코드가 자동으로 입력돼.</div>
 
     <div class="player-list" id="lobbyPlayerList"></div>
+
+    <div class="picker-label">🎨 내 색깔 고르기 (✕ 표시는 다른 친구가 쓰는 색이에요)</div>
+    <div class="color-picker" id="colorPicker"></div>
 
     <div id="lobbyHostControls">
       <button class="btn btn-primary" id="btnStartGame" disabled>▶ 게임 시작 (최소 3명 필요)</button>
@@ -398,14 +417,26 @@
   // Constants
   // ============================================================
   const COLORS = [
-    {id:'red', hex:'#ff5470', name:'빨강'},
-    {id:'blue', hex:'#5c8dff', name:'파랑'},
-    {id:'green', hex:'#48e6a0', name:'초록'},
-    {id:'yellow', hex:'#ffce45', name:'노랑'},
-    {id:'pink', hex:'#ff8fd6', name:'분홍'},
-    {id:'orange', hex:'#ff9a4d', name:'주황'},
-    {id:'purple', hex:'#b98bff', name:'보라'},
-    {id:'cyan', hex:'#5ce1ff', name:'하늘'}
+    {id:'red',     hex:'#ff5470', name:'빨강'},
+    {id:'orange',  hex:'#ff9a4d', name:'주황'},
+    {id:'yellow',  hex:'#ffce45', name:'노랑'},
+    {id:'lime',    hex:'#b6e94a', name:'연두'},
+    {id:'green',   hex:'#48e6a0', name:'초록'},
+    {id:'teal',    hex:'#2fd4c4', name:'청록'},
+    {id:'cyan',    hex:'#5ce1ff', name:'하늘'},
+    {id:'blue',    hex:'#5c8dff', name:'파랑'},
+    {id:'navy',    hex:'#3a4fb0', name:'남색'},
+    {id:'purple',  hex:'#b98bff', name:'보라'},
+    {id:'pink',    hex:'#ff8fd6', name:'분홍'},
+    {id:'rose',    hex:'#ff6fa3', name:'장미'},
+    {id:'coral',   hex:'#ff7a6b', name:'산호'},
+    {id:'brown',   hex:'#b07a4a', name:'갈색'},
+    {id:'mint',    hex:'#9ff5c8', name:'민트'},
+    {id:'lavender',hex:'#cbb4ff', name:'라벤더'},
+    {id:'gold',    hex:'#f2c14e', name:'금색'},
+    {id:'white',   hex:'#e9edff', name:'하양'},
+    {id:'gray',    hex:'#7a83b0', name:'회색'},
+    {id:'black',   hex:'#3a4066', name:'검정'}
   ];
   const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   const MAP_W = 1000, MAP_H = 620;
@@ -668,12 +699,40 @@
         ${id===S.roomData.hostId ? '<div class="ptag">호스트</div>' : ''}`;
       list.appendChild(chip);
     }
+    renderColorPicker();
     const count = ids.length;
     $('lobbyHostControls').classList.toggle('hidden', !S.isHost);
     $('lobbyGuestNote').classList.toggle('hidden', S.isHost);
     const startBtn = $('btnStartGame');
     startBtn.disabled = count < 3;
     startBtn.textContent = count < 3 ? `▶ 게임 시작 (최소 3명 필요, 현재 ${count}명)` : '▶ 게임 시작';
+  }
+
+  function renderColorPicker(){
+    if(!S.roomData) return;
+    const players = S.roomData.players || {};
+    const takenByOthers = new Set();
+    for(const id in players){ if(id !== S.myId) takenByOthers.add(players[id].color); }
+    const wrap = $('colorPicker');
+    wrap.innerHTML = '';
+    for(const c of COLORS){
+      const taken = takenByOthers.has(c.id);
+      const b = document.createElement('button');
+      b.className = 'swatch' + (c.id===S.myColorId ? ' mine' : '') + (taken ? ' taken' : '');
+      b.style.background = c.hex;
+      b.title = c.name;
+      if(!taken) b.addEventListener('click', ()=>changeColor(c.id));
+      wrap.appendChild(b);
+    }
+  }
+
+  async function changeColor(colorId){
+    if(!S.roomData || colorId === S.myColorId) return;
+    const players = S.roomData.players || {};
+    for(const id in players){ if(id !== S.myId && players[id].color === colorId) return; }
+    S.myColorId = colorId;
+    renderColorPicker();
+    try{ await S.fdb.ref('rooms/'+S.roomCode+'/players/'+S.myId+'/color').set(colorId); }catch(e){}
   }
 
   function escapeHtml(s){
