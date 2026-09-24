@@ -262,21 +262,24 @@
   }
   .mg-success{ text-align:center; color:var(--success); font-family:'Jua',sans-serif; font-size:24px; padding:20px 0; }
 
-  .dpad{
-    position:absolute; right: max(18px, env(safe-area-inset-right)); bottom: max(90px, env(safe-area-inset-bottom));
-    width:150px; height:150px; z-index:5; display:none;
+  .action-btn.cctv{ background: var(--cyan); color:#04262e; }
+
+  /* ---------- Joystick ---------- */
+  .joystick{
+    position:absolute; left: max(20px, env(safe-area-inset-left)); bottom: max(96px, calc(env(safe-area-inset-bottom) + 80px));
+    z-index:5; display:none;
   }
-  .dpad.show{ display:block; }
-  .dpad button{
-    position:absolute; width:50px; height:50px; border-radius:14px;
-    background: rgba(31,37,71,0.85); border:1px solid var(--line); color:var(--text);
-    font-size:18px; -webkit-tap-highlight-color: transparent;
+  .joystick.show{ display:block; }
+  .joy-base{
+    width:132px; height:132px; border-radius:50%; position:relative;
+    background: rgba(31,37,71,0.5); border:2px solid rgba(92,225,255,0.3);
+    touch-action:none; -webkit-tap-highlight-color: transparent;
   }
-  .dpad button:active{ background: var(--panel-3); }
-  .dpad .up{ top:0; left:50px; }
-  .dpad .down{ top:100px; left:50px; }
-  .dpad .left{ top:50px; left:0; }
-  .dpad .right{ top:50px; left:100px; }
+  .joy-knob{
+    width:58px; height:58px; border-radius:50%; position:absolute; left:37px; top:37px;
+    background: radial-gradient(circle at 35% 30%, #9fefff, #5ce1ff);
+    box-shadow: 0 4px 14px rgba(0,0,0,0.45); pointer-events:none;
+  }
 
   /* ---------- Meeting overlay ---------- */
   .overlay{
@@ -404,17 +407,27 @@
       <div class="task-bar-num mono" id="taskBarNum">0 / 0</div>
     </div>
 
-    <div class="dpad" id="dpad">
-      <button class="up" data-dir="up">▲</button>
-      <button class="down" data-dir="down">▼</button>
-      <button class="left" data-dir="left">◀</button>
-      <button class="right" data-dir="right">▶</button>
+    <div class="joystick" id="joystick">
+      <div class="joy-base" id="joyBase"><div class="joy-knob" id="joyKnob"></div></div>
     </div>
 
     <div class="controls-bottom">
+      <button class="action-btn cctv hidden" id="btnCctv">📹 CCTV</button>
       <button class="action-btn task hidden" id="btnTask">🛠 미션</button>
       <button class="action-btn kill hidden" id="btnKill">🔪 제거하기</button>
       <button class="action-btn meeting" id="btnMeeting">🚨 긴급회의</button>
+    </div>
+  </div>
+
+  <!-- CCTV OVERLAY -->
+  <div id="overlayCctv" class="overlay hidden">
+    <div class="meeting-panel" style="width:min(96vw,620px);">
+      <div class="meeting-header">
+        <p class="eyebrow">보안 카메라</p>
+        <h2 style="margin:2px 0;font-size:20px;">📹 CCTV — 실시간 감시</h2>
+      </div>
+      <canvas id="cctvCanvas" style="width:100%;display:block;border-radius:12px;border:1px solid var(--line);background:#070a16;"></canvas>
+      <button class="btn btn-ghost btn-small" id="btnCctvClose" style="width:100%;margin-top:12px;">닫기</button>
     </div>
   </div>
 
@@ -607,12 +620,39 @@
     }
     return false;
   }
+  function roomAt(x, y){
+    for(const r of ROOMS){
+      if(x >= r.x && x <= r.x+r.w && y >= r.y && y <= r.y+r.h) return r;
+    }
+    return null;
+  }
+  // 컴퓨터(모니터)가 있는 방에서 CCTV 사용 가능
+  const CCTV_ROOMS = ['보안실','항법실','관리실','통신실'];
 
-  // Task spots — one per room (crew walk here and complete a mini-game)
-  const TASK_SPOTS = ROOMS.map((rm, i) => ({
-    id: 't'+i, room: rm.name, name: rm.name+' 미션',
-    x: rm.x + rm.w/2, y: rm.y + rm.h/2
-  }));
+  // 방마다 어울리는 미션 이름 + 미니게임 종류 (seq=순서, tap=연타, hold=꾹누르기)
+  const ROOM_TASK = {
+    '무기고':{name:'무기 정렬',  game:'seq'},
+    '통신실':{name:'통신 송신',  game:'tap'},
+    '함교':  {name:'항로 조정',  game:'seq'},
+    '항법실':{name:'좌표 입력',  game:'seq'},
+    '산소실':{name:'산소 밸브',  game:'hold'},
+    '전기실':{name:'전선 연결',  game:'seq'},
+    '창고':  {name:'화물 정리',  game:'tap'},
+    '식당':  {name:'쓰레기 비우기',game:'tap'},
+    '실험실':{name:'시약 배합',  game:'seq'},
+    '관리실':{name:'서류 정리',  game:'tap'},
+    '엔진실':{name:'엔진 점화',  game:'hold'},
+    '보안실':{name:'CCTV 점검',  game:'seq'},
+    '원자로':{name:'원자로 냉각',game:'hold'},
+    '의무실':{name:'검체 스캔',  game:'hold'},
+    '정원':  {name:'식물 물주기',game:'hold'}
+  };
+  // Task spots — one per room (crew walk here and complete a themed mini-game)
+  const TASK_SPOTS = ROOMS.map((rm, i) => {
+    const meta = ROOM_TASK[rm.name] || {name: rm.name+' 미션', game:'tap'};
+    return { id: 't'+i, room: rm.name, name: meta.name, game: meta.game,
+             x: rm.x + rm.w/2, y: rm.y + rm.h/2 };
+  });
 
   function randCode(){
     let s = '';
@@ -880,6 +920,7 @@
     $('overlayMeeting').classList.toggle('hidden', v!=='meeting');
     $('overlayEnd').classList.toggle('hidden', v!=='ended');
     if(v!=='playing' && S.missionOpen) closeMission();
+    if(v!=='playing' && S.cctvOpen) closeCctv();
   }
 
   function enterLobby(){
@@ -1035,6 +1076,7 @@
     S.lookahead = { x: 0, y: 0 };
     S.moving = false; S.lastMoveDir = { x: 0, y: 0 };
     S.missionOpen = false;
+    S.cctvOpen = false;
     S.deathFx = [];
     showRoleBanner();
     renderHudPlayerList();
@@ -1131,12 +1173,14 @@
     if(S.view === 'playing'){
       const alive = S.roomData && S.roomData.players[S.myId] ? S.roomData.players[S.myId].alive : true;
       S.moving = false;
-      if(alive && !S.missionOpen){
+      if(alive && !S.missionOpen && !S.cctvOpen){
         let dx=0, dy=0;
         if(S.keys.up) dy -= 1;
         if(S.keys.down) dy += 1;
         if(S.keys.left) dx -= 1;
         if(S.keys.right) dx += 1;
+        // 조이스틱 입력 합치기 (데드존)
+        if(S.joy && (Math.abs(S.joy.x) > 0.15 || Math.abs(S.joy.y) > 0.15)){ dx += S.joy.x; dy += S.joy.y; }
         if(dx!==0 || dy!==0){
           const len = Math.hypot(dx,dy);
           const stepX = (dx/len)*MOVE_SPEED*dt;
@@ -1610,18 +1654,41 @@
   function isTouchDevice(){
     return ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
   }
-  if(isTouchDevice()) $('dpad').classList.add('show');
+  if(isTouchDevice()) $('joystick').classList.add('show');
 
-  document.querySelectorAll('#dpad button').forEach(btn=>{
-    const dir = btn.dataset.dir;
-    const set = (v)=> (e)=>{ e.preventDefault(); S.keys[dir]=v; };
-    btn.addEventListener('touchstart', set(true), {passive:false});
-    btn.addEventListener('touchend', set(false), {passive:false});
-    btn.addEventListener('touchcancel', set(false), {passive:false});
-    btn.addEventListener('mousedown', set(true));
-    btn.addEventListener('mouseup', set(false));
-    btn.addEventListener('mouseleave', set(false));
-  });
+  // ---- Analog joystick (drag the knob to move) ----
+  S.joy = { x: 0, y: 0 };
+  (function setupJoystick(){
+    const base = $('joyBase'), knob = $('joyKnob');
+    let active = false, rect = null;
+    const R = 40; // max knob travel
+    function evtPoint(e){
+      const t = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0]) || e;
+      return { x: t.clientX, y: t.clientY };
+    }
+    function start(e){ e.preventDefault(); active = true; rect = base.getBoundingClientRect(); move(e); }
+    function move(e){
+      if(!active || !rect) return;
+      e.preventDefault();
+      const p = evtPoint(e);
+      const cx = rect.left + rect.width/2, cy = rect.top + rect.height/2;
+      let dx = p.x - cx, dy = p.y - cy;
+      const d = Math.hypot(dx, dy);
+      const m = Math.min(d, R);
+      const ang = Math.atan2(dy, dx);
+      const kx = (d>0 ? Math.cos(ang) : 0) * m, ky = (d>0 ? Math.sin(ang) : 0) * m;
+      knob.style.transform = 'translate('+kx+'px,'+ky+'px)';
+      S.joy = { x: kx/R, y: ky/R };
+    }
+    function end(){ active = false; rect = null; knob.style.transform = 'translate(0,0)'; S.joy = { x: 0, y: 0 }; }
+    base.addEventListener('touchstart', start, {passive:false});
+    window.addEventListener('touchmove', move, {passive:false});
+    window.addEventListener('touchend', end);
+    window.addEventListener('touchcancel', end);
+    base.addEventListener('mousedown', start);
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', end);
+  })();
 
   // ============================================================
   // Kill action
@@ -1650,9 +1717,9 @@
   }
 
   function updateKillButtonVisibility(){
-    const btnKill = $('btnKill'), btnMeeting = $('btnMeeting'), btnTask = $('btnTask');
+    const btnKill = $('btnKill'), btnMeeting = $('btnMeeting'), btnTask = $('btnTask'), btnCctv = $('btnCctv');
     if(S.view !== 'playing' || !S.roomData){
-      btnKill.classList.add('hidden'); btnTask.classList.add('hidden');
+      btnKill.classList.add('hidden'); btnTask.classList.add('hidden'); btnCctv.classList.add('hidden');
       return;
     }
     const me = S.roomData.players[S.myId];
@@ -1676,6 +1743,11 @@
     const spot = (myAlive && !S.missionOpen) ? nearestMyTask() : null;
     if(spot){ btnTask.classList.remove('hidden'); btnTask.dataset.spotId = spot.id; }
     else { btnTask.classList.add('hidden'); }
+
+    // CCTV button (컴퓨터가 있는 방 안에 있을 때)
+    const rm = roomAt(S.myPos.x, S.myPos.y);
+    const canCctv = myAlive && !S.missionOpen && rm && CCTV_ROOMS.includes(rm.name);
+    btnCctv.classList.toggle('hidden', !canCctv);
 
     // meeting button (shared cooldown countdown)
     const nextAt = S.roomData.nextMeetingAt || 0;
@@ -1735,8 +1807,8 @@
     $('missionRoom').textContent = spot.room + ' 미션';
     $('missionTitle').textContent = spot.name;
     $('overlayMission').classList.remove('hidden');
-    const games = [missionSequence, missionTap, missionHold];
-    const game = games[Math.floor(Math.random()*games.length)];
+    const games = { seq: missionSequence, tap: missionTap, hold: missionHold };
+    const game = games[spot.game] || missionTap;
     game();
   }
 
@@ -2157,6 +2229,61 @@
   }
 
   // ============================================================
+  // CCTV (보안 카메라) — 컴퓨터 있는 방에서 전체 맵을 실시간 감시
+  // ============================================================
+  let cctvRAF = null;
+  const cctvCanvas = $('cctvCanvas');
+  const cctvCtx = cctvCanvas.getContext('2d');
+  function openCctv(){
+    S.cctvOpen = true;
+    $('overlayCctv').classList.remove('hidden');
+    // 캔버스 크기 맵 비율에 맞춤
+    const cssW = Math.min(580, window.innerWidth*0.9);
+    const cssH = cssW * (MAP_H/MAP_W);
+    cctvCanvas.style.height = cssH + 'px';
+    cctvCanvas.width = cssW * devicePixelRatio;
+    cctvCanvas.height = cssH * devicePixelRatio;
+    if(cctvRAF) cancelAnimationFrame(cctvRAF);
+    const loop = ()=>{ if(!S.cctvOpen){ cctvRAF=null; return; } drawCctv(); cctvRAF = requestAnimationFrame(loop); };
+    cctvRAF = requestAnimationFrame(loop);
+  }
+  function closeCctv(){
+    S.cctvOpen = false;
+    if(cctvRAF){ cancelAnimationFrame(cctvRAF); cctvRAF = null; }
+    $('overlayCctv').classList.add('hidden');
+  }
+  function drawCctv(){
+    const w = cctvCanvas.width, h = cctvCanvas.height;
+    const scale = Math.min(w/MAP_W, h/MAP_H);
+    const ox = (w - MAP_W*scale)/2, oy = (h - MAP_H*scale)/2;
+    cctvCtx.fillStyle = '#070a16'; cctvCtx.fillRect(0,0,w,h);
+    cctvCtx.save(); cctvCtx.translate(ox, oy); cctvCtx.scale(scale, scale);
+    // 방/복도
+    cctvCtx.fillStyle = '#1a2148';
+    for(const r of WALKABLE){ cctvCtx.fillRect(r.x, r.y, r.w, r.h); }
+    cctvCtx.strokeStyle = 'rgba(92,225,255,0.25)'; cctvCtx.lineWidth = 3;
+    for(const r of ROOMS){ cctvCtx.strokeRect(r.x, r.y, r.w, r.h); }
+    // 방 이름
+    cctvCtx.fillStyle = 'rgba(136,145,194,0.8)'; cctvCtx.font = '700 26px "Jua",sans-serif'; cctvCtx.textAlign='center';
+    for(const r of ROOMS){ cctvCtx.fillText(r.name, r.x + r.w/2, r.y + 40); }
+    // 플레이어 점 (살아있는 사람만 위치 표시)
+    const players = (S.roomData && S.roomData.players) || {};
+    for(const id in players){
+      const p = players[id];
+      const pos = (id===S.myId) ? S.myPos : S.positions[id];
+      if(!pos) continue;
+      cctvCtx.globalAlpha = p.alive ? 1 : 0.35;
+      cctvCtx.fillStyle = colorHex(p.color);
+      cctvCtx.beginPath(); cctvCtx.arc(pos.x, pos.y, 16, 0, Math.PI*2); cctvCtx.fill();
+      cctvCtx.strokeStyle = id===S.myId ? '#5ce1ff' : 'rgba(255,255,255,0.6)';
+      cctvCtx.lineWidth = 3; cctvCtx.stroke();
+      if(!p.alive){ cctvCtx.fillStyle='#fff'; cctvCtx.font='bold 20px sans-serif'; cctvCtx.textAlign='center'; cctvCtx.textBaseline='middle'; cctvCtx.fillText('✖', pos.x, pos.y); cctvCtx.textBaseline='alphabetic'; }
+    }
+    cctvCtx.globalAlpha = 1;
+    cctvCtx.restore();
+  }
+
+  // ============================================================
   // Meeting
   // ============================================================
   async function callMeeting(){
@@ -2437,6 +2564,8 @@
   $('btnMeeting').addEventListener('click', callMeeting);
   $('btnTask').addEventListener('click', openMission);
   $('btnMissionClose').addEventListener('click', closeMission);
+  $('btnCctv').addEventListener('click', openCctv);
+  $('btnCctvClose').addEventListener('click', closeCctv);
   $('btnCopyInvite').addEventListener('click', copyInviteLink);
   $('btnLeaveLobby').addEventListener('click', leaveRoom);
   $('btnEndLeave').addEventListener('click', leaveRoom);
