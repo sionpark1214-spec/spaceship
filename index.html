@@ -416,14 +416,31 @@
   const MEETING_COOLDOWN_MS = 8000;
   const MEETING_DURATION_MS = 20000;
 
+  // Rooms (walls around them) + corridors that connect them (open doorways)
   const ROOMS = [
-    {name:'식당', x:360, y:40, w:280, h:170},
-    {name:'무기고', x:40, y:40, w:230, h:150},
-    {name:'항법실', x:730, y:40, w:230, h:150},
-    {name:'전기실', x:40, y:410, w:230, h:170},
-    {name:'의무실', x:385, y:420, w:230, h:160},
-    {name:'원자로', x:730, y:400, w:230, h:180}
+    {name:'무기고', x:60,  y:70,  w:200, h:150},
+    {name:'식당',   x:400, y:60,  w:200, h:170},
+    {name:'항법실', x:740, y:70,  w:200, h:150},
+    {name:'전기실', x:60,  y:400, w:200, h:150},
+    {name:'의무실', x:400, y:400, w:200, h:150},
+    {name:'원자로', x:740, y:400, w:200, h:150}
   ];
+  const CORRIDORS = [
+    {x:60,  y:295, w:880, h:60},  // 가운데 큰 복도 (좌우 연결)
+    {x:130, y:210, w:60,  h:95},  // 무기고 → 복도
+    {x:130, y:345, w:60,  h:60},  // 전기실 → 복도
+    {x:810, y:210, w:60,  h:95},  // 항법실 → 복도
+    {x:810, y:345, w:60,  h:60},  // 원자로 → 복도
+    {x:470, y:220, w:60,  h:85},  // 식당 → 복도
+    {x:470, y:345, w:60,  h:60}   // 의무실 → 복도
+  ];
+  const WALKABLE = ROOMS.concat(CORRIDORS);
+  function walkableAt(x, y){
+    for(const r of WALKABLE){
+      if(x >= r.x && x <= r.x+r.w && y >= r.y && y <= r.y+r.h) return true;
+    }
+    return false;
+  }
 
   function randCode(){
     let s = '';
@@ -721,7 +738,8 @@
   // ============================================================
   function enterGame(){
     setView('playing');
-    S.myPos = { x: 100 + Math.random()*(MAP_W-200), y: 100 + Math.random()*(MAP_H-200) };
+    // spawn inside the 식당 (cafeteria)
+    S.myPos = { x: 430 + Math.random()*140, y: 95 + Math.random()*110 };
     showRoleBanner();
     renderHudPlayerList();
     startGameLoop();
@@ -824,8 +842,12 @@
         if(S.keys.right) dx += 1;
         if(dx!==0 || dy!==0){
           const len = Math.hypot(dx,dy);
-          S.myPos.x = clamp(S.myPos.x + (dx/len)*MOVE_SPEED*dt, PLAYER_R, MAP_W-PLAYER_R);
-          S.myPos.y = clamp(S.myPos.y + (dy/len)*MOVE_SPEED*dt, PLAYER_R, MAP_H-PLAYER_R);
+          const stepX = (dx/len)*MOVE_SPEED*dt;
+          const stepY = (dy/len)*MOVE_SPEED*dt;
+          const nx = clamp(S.myPos.x + stepX, PLAYER_R, MAP_W-PLAYER_R);
+          if(walkableAt(nx, S.myPos.y)) S.myPos.x = nx;
+          const ny = clamp(S.myPos.y + stepY, PLAYER_R, MAP_H-PLAYER_R);
+          if(walkableAt(S.myPos.x, ny)) S.myPos.y = ny;
           if(dx > 0) S.myFacing = 1; else if(dx < 0) S.myFacing = -1;
           S.myWalk = (S.myWalk || 0) + dt * 10;
         }
@@ -849,25 +871,40 @@
     mctx.translate(offX, offY);
     mctx.scale(scale, scale);
 
-    mctx.fillStyle = '#141a3a';
+    // outer space (outside the hull)
+    mctx.fillStyle = '#070a16';
     mctx.fillRect(0,0,MAP_W,MAP_H);
-    mctx.strokeStyle = 'rgba(92,225,255,0.05)';
+
+    // walls: fill each walkable rect inflated by wall thickness (they merge,
+    // and floors drawn on top leave a wall band + open doorways where rects connect)
+    const WT = 9;
+    mctx.fillStyle = '#39427e';
+    for(const r of WALKABLE){ mctx.fillRect(r.x-WT, r.y-WT, r.w+WT*2, r.h+WT*2); }
+    // subtle inner wall highlight
+    mctx.fillStyle = '#4a55a0';
+    for(const r of WALKABLE){ mctx.fillRect(r.x-WT, r.y-WT, r.w+WT*2, 3); }
+
+    // floors
+    mctx.fillStyle = '#171e46';
+    for(const r of WALKABLE){ mctx.fillRect(r.x, r.y, r.w, r.h); }
+
+    // floor grid, clipped to the floor area only
+    mctx.save();
+    mctx.beginPath();
+    for(const r of WALKABLE){ mctx.rect(r.x, r.y, r.w, r.h); }
+    mctx.clip();
+    mctx.strokeStyle = 'rgba(92,225,255,0.06)';
     mctx.lineWidth = 1;
     for(let gx=0; gx<=MAP_W; gx+=40){ mctx.beginPath(); mctx.moveTo(gx,0); mctx.lineTo(gx,MAP_H); mctx.stroke(); }
     for(let gy=0; gy<=MAP_H; gy+=40){ mctx.beginPath(); mctx.moveTo(0,gy); mctx.lineTo(MAP_W,gy); mctx.stroke(); }
+    mctx.restore();
 
+    // room name labels
     for(const r of ROOMS){
-      mctx.fillStyle = '#1c2350';
-      roundRect(mctx, r.x, r.y, r.w, r.h, 14);
-      mctx.fill();
-      mctx.strokeStyle = 'rgba(255,206,69,0.35)';
-      mctx.lineWidth = 2;
-      roundRect(mctx, r.x, r.y, r.w, r.h, 14);
-      mctx.stroke();
-      mctx.fillStyle = '#8891c2';
-      mctx.font = '600 15px "Noto Sans KR", sans-serif';
-      mctx.textAlign = 'left';
-      mctx.fillText(r.name, r.x+12, r.y+22);
+      mctx.fillStyle = 'rgba(255,206,69,0.75)';
+      mctx.font = '700 15px "Jua","Noto Sans KR", sans-serif';
+      mctx.textAlign = 'center';
+      mctx.fillText(r.name, r.x + r.w/2, r.y + 26);
     }
 
     const peers = getRoomPeers();
