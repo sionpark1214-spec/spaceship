@@ -361,6 +361,10 @@
   .result-panel{ text-align:center; }
   .result-panel .who{ font-size:22px; margin:10px 0 4px; }
   .result-panel .verdict{ font-size:15px; color: var(--text-dim); margin-bottom: 6px; }
+  #ejectCanvas{ position:absolute; inset:0; width:100%; height:100%; }
+  .eject-text{ position:relative; z-index:1; font-family:'Jua',sans-serif; font-size:26px; color:#fff; text-align:center; text-wrap:balance; padding:0 20px; text-shadow:0 2px 12px rgba(0,0,0,0.8); opacity:0; transition:opacity .5s; }
+  .eject-sub{ position:relative; z-index:1; font-size:15px; color:var(--text-dim); margin-top:10px; opacity:0; transition:opacity .5s; }
+  .eject-text.show, .eject-sub.show{ opacity:1; }
 
   .end-panel .banner{ font-size:26px; text-align:center; margin-bottom: 6px; }
   .end-panel .banner.crew{ color: var(--success); }
@@ -587,13 +591,11 @@
     </div>
   </div>
 
-  <!-- RESULT OVERLAY -->
-  <div id="overlayResult" class="overlay hidden">
-    <div class="meeting-panel result-panel">
-      <p class="eyebrow">투표 결과</p>
-      <div class="who" id="resultWho"></div>
-      <div class="verdict" id="resultVerdict"></div>
-    </div>
+  <!-- RESULT / EJECTION OVERLAY -->
+  <div id="overlayResult" class="overlay hidden" style="background:#03040a;flex-direction:column;">
+    <canvas id="ejectCanvas"></canvas>
+    <div id="ejectText" class="eject-text"></div>
+    <div id="ejectSub" class="eject-sub"></div>
   </div>
 
   <!-- END OVERLAY -->
@@ -2930,20 +2932,65 @@
     S.lastShownResultKey = key;
     if(meetingTickHandle){ clearInterval(meetingTickHandle); meetingTickHandle=null; }
     S.isResolvingMeeting = null;
-    if(!le || !le.id){
-      $('resultWho').textContent = '아무도 추방되지 않았어요';
-      $('resultVerdict').textContent = '투표가 갈렸거나 스킵이 많았어요.';
-    } else {
-      const p = S.roomData.players[le.id];
-      $('resultWho').textContent = (p ? p.name : '???') + ' 님이 추방되었습니다';
-      $('resultVerdict').textContent = le.wasImpostor ? '😈 정체불명이었습니다!' : '🧑‍🚀 승무원이었습니다...';
-    }
     $('overlayMeeting').classList.add('hidden');
-    $('overlayResult').classList.remove('hidden');
-    setTimeout(()=>{
-      $('overlayResult').classList.add('hidden');
-      after();
-    }, 3200);
+
+    const ejName = (le && le.id && S.roomData.players[le.id]) ? S.roomData.players[le.id].name : null;
+    const ejColor = (le && le.id && S.roomData.players[le.id]) ? colorHex(S.roomData.players[le.id].color) : '#8891c2';
+    // 남은 정체불명 수
+    const imp = S.roomData.impostorMap || {};
+    const aliveImp = Object.keys(S.roomData.players).filter(id => S.roomData.players[id].alive && imp[id]).length;
+
+    let mainText, subText;
+    if(!le || !le.id){
+      mainText = '아무도 추방되지 않았습니다.';
+      subText = '투표가 갈렸거나 스킵이 많았어요.';
+    } else {
+      mainText = ejName + ' 은(는) ' + (le.wasImpostor ? '정체불명이었습니다!' : '정체불명이 아니었습니다.');
+      subText = aliveImp > 0 ? ('정체불명이 '+aliveImp+'명 남았습니다.') : '남은 정체불명이 없습니다!';
+    }
+    runEjectAnim(!!(le && le.id), ejColor, ejName, mainText, subText, after);
+  }
+
+  function runEjectAnim(hasEject, color, name, mainText, subText, after){
+    const ov = $('overlayResult');
+    const cv = $('ejectCanvas');
+    const txt = $('ejectText'), sub = $('ejectSub');
+    txt.textContent = ''; sub.textContent = ''; txt.classList.remove('show'); sub.classList.remove('show');
+    ov.classList.remove('hidden');
+    const ctx = cv.getContext('2d');
+    function size(){ cv.width = window.innerWidth * devicePixelRatio; cv.height = window.innerHeight * devicePixelRatio; }
+    size();
+    const W = cv.width, H = cv.height, dpr = devicePixelRatio;
+    // 별
+    const stars = Array.from({length: 90}, ()=>({ x:Math.random()*W, y:Math.random()*H, r:(Math.random()*1.6+0.4)*dpr, s:(Math.random()*0.4+0.15) }));
+    const DUR = 3600, start = performance.now();
+    const R = 34 * dpr; // 추방 캐릭터 크기
+    let raf = null;
+    function frame(now){
+      const e = now - start, p = Math.min(1, e/DUR);
+      ctx.fillStyle = '#03040a'; ctx.fillRect(0,0,W,H);
+      // 흐르는 별
+      for(const st of stars){ st.x -= st.s*dpr*2; if(st.x < 0) st.x = W; ctx.globalAlpha = 0.5 + 0.5*Math.random()*0.3; ctx.fillStyle = '#cfe0ff'; ctx.beginPath(); ctx.arc(st.x, st.y, st.r, 0, Math.PI*2); ctx.fill(); }
+      ctx.globalAlpha = 1;
+      if(hasEject){
+        // 왼쪽 밖 → 오른쪽 밖으로 빙글빙글 떠가기
+        const cx = (-0.15 + 1.3*p) * W;
+        const cy = H*0.42 + Math.sin(p*Math.PI*2)*H*0.05;
+        const rot = p * Math.PI * 4;
+        const sc = dpr * (2.6 - 0.6*p);
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(rot);
+        ctx.scale(sc, sc);
+        // 캐릭터 (drawCrewmate는 자체 translate 사용 → 0,0 기준)
+        try{ drawCrewmate(ctx, 0, 0, color, '', true, false, 1, 0); }catch(err){}
+        ctx.restore();
+      }
+      if(p > 0.35 && !txt.classList.contains('show')){ txt.textContent = mainText; sub.textContent = subText; txt.classList.add('show'); sub.classList.add('show'); }
+      if(p < 1){ raf = requestAnimationFrame(frame); }
+      else { setTimeout(()=>{ if(raf) cancelAnimationFrame(raf); ov.classList.add('hidden'); txt.classList.remove('show'); sub.classList.remove('show'); after(); }, 700); }
+    }
+    raf = requestAnimationFrame(frame);
   }
 
   // ============================================================
