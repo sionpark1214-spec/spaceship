@@ -1216,12 +1216,16 @@
     for(let gy=0; gy<=MAP_H; gy+=40){ mctx.beginPath(); mctx.moveTo(0,gy); mctx.lineTo(MAP_W,gy); mctx.stroke(); }
     mctx.restore();
 
+    // room furniture / props (themed per room)
+    const decT = performance.now();
+    for(const r of ROOMS){ drawRoomDecor(r, decT); }
+
     // room name labels
     for(const r of ROOMS){
-      mctx.fillStyle = 'rgba(255,206,69,0.75)';
+      mctx.fillStyle = 'rgba(255,206,69,0.85)';
       mctx.font = '700 15px "Jua","Noto Sans KR", sans-serif';
       mctx.textAlign = 'center';
-      mctx.fillText(r.name, r.x + r.w/2, r.y + 26);
+      mctx.fillText(r.name, r.x + r.w/2, r.y + 24);
     }
 
     // task spots
@@ -1255,9 +1259,10 @@
     const myAlive = S.roomData && S.roomData.players[S.myId] ? S.roomData.players[S.myId].alive : true;
     drawCrewmate(mctx, S.myPos.x, S.myPos.y, colorHex(S.myColorId), S.myName + ' (나)', myAlive, true, S.myFacing||1, S.myWalk||0);
 
-    // kill effects (slash bursts over recent deaths)
-    S.deathFx = (S.deathFx||[]).filter(f => performance.now()-f.t < 800);
-    for(const f of S.deathFx){ drawKillFx(f.x, f.y, (performance.now()-f.t)/800, f.color); }
+    // kill effects (flashy bursts over recent deaths)
+    const nowFx = performance.now();
+    S.deathFx = (S.deathFx||[]).filter(f => nowFx - f.t < KILLFX_DUR);
+    for(const f of S.deathFx){ drawKillFx(f, nowFx); }
 
     mctx.restore();
   }
@@ -1851,6 +1856,160 @@
     try{ await roomRef('').update(updates); }catch(e){}
   }
 
+  // ---- room furniture / decorations (themed per room) ----
+  function rr(x,y,w,h,rad){ roundRect(mctx,x,y,w,h,rad); }
+  function box(x,y,w,h,fill,stroke){
+    mctx.fillStyle=fill; rr(x,y,w,h,4); mctx.fill();
+    if(stroke){ mctx.strokeStyle=stroke; mctx.lineWidth=2; rr(x,y,w,h,4); mctx.stroke(); }
+  }
+  function screen(x,y,w,h,glow){
+    box(x,y,w,h,'#0e1330','#4a55a0');
+    mctx.fillStyle=glow; mctx.globalAlpha=0.9; rr(x+3,y+3,w-6,h-6,3); mctx.fill(); mctx.globalAlpha=1;
+  }
+  function drawRoomDecor(r, t){
+    const cx = r.x + r.w/2, cy = r.y + r.h/2;
+    const pulse = 0.5 + 0.5*Math.sin(t*0.004);
+    mctx.save();
+    switch(r.name){
+      case '원자로': {
+        // 큰 원자로 코어 (빛나고 회전하는 격납 아크)
+        mctx.save(); mctx.translate(cx, cy+14);
+        // 받침대
+        box(-64,44,128,20,'#2a3160','#4a55a0');
+        // 경고 줄무늬
+        mctx.fillStyle='#ffce45'; for(let i=-56;i<56;i+=18){ mctx.save(); mctx.translate(i,54); mctx.rotate(0.5); mctx.fillRect(0,0,7,16); mctx.restore(); }
+        // 외곽 케이싱
+        mctx.strokeStyle='#39427e'; mctx.lineWidth=10; mctx.beginPath(); mctx.arc(0,0,52,0,Math.PI*2); mctx.stroke();
+        // 코어 발광
+        const g = mctx.createRadialGradient(0,0,4,0,0,46*(0.85+0.15*pulse));
+        g.addColorStop(0,'#ffffff'); g.addColorStop(0.4,'#7ef0ff'); g.addColorStop(1,'rgba(46,212,196,0)');
+        mctx.fillStyle=g; mctx.beginPath(); mctx.arc(0,0,46,0,Math.PI*2); mctx.fill();
+        mctx.fillStyle='#bafcff'; mctx.beginPath(); mctx.arc(0,0,16+3*pulse,0,Math.PI*2); mctx.fill();
+        // 회전 격납 아크
+        mctx.strokeStyle='#5ce1ff'; mctx.lineWidth=4;
+        for(let i=0;i<3;i++){ mctx.save(); mctx.rotate(t*0.001 + i*Math.PI*2/3); mctx.beginPath(); mctx.arc(0,0,40,-0.6,0.6); mctx.stroke(); mctx.restore(); }
+        mctx.restore();
+        break;
+      }
+      case '엔진실': {
+        // 엔진 실린더 3개 + 파이프
+        for(let i=0;i<3;i++){
+          const x = cx - 70 + i*70;
+          box(x-22, cy-40, 44, 90, '#2a3160', '#4a55a0');
+          const gg = mctx.createLinearGradient(0, cy-40, 0, cy+50);
+          gg.addColorStop(0, '#ff9a4d'); gg.addColorStop(1, 'rgba(255,84,112,'+(0.3+0.4*pulse)+')');
+          mctx.fillStyle=gg; rr(x-16, cy-16, 32, 60, 4); mctx.fill();
+          mctx.fillStyle='#ffce45'; mctx.beginPath(); mctx.arc(x, cy-40, 7, 0, Math.PI*2); mctx.fill();
+        }
+        mctx.strokeStyle='#39427e'; mctx.lineWidth=8; mctx.beginPath(); mctx.moveTo(cx-70,cy+54); mctx.lineTo(cx+70,cy+54); mctx.stroke();
+        break;
+      }
+      case '의무실': {
+        // 침대 2개 + 의료 십자 스크린
+        box(cx-96, cy-6, 76, 40, '#2a3160', '#4a55a0');
+        box(cx-96, cy-16, 76, 12, '#e9edff', null);
+        box(cx+20, cy-6, 76, 40, '#2a3160', '#4a55a0');
+        box(cx+20, cy-16, 76, 12, '#e9edff', null);
+        screen(cx-14, cy-56, 28, 26, '#48e6a0');
+        mctx.fillStyle='#fff'; mctx.fillRect(cx-3, cy-52, 6, 18); mctx.fillRect(cx-9, cy-46, 18, 6);
+        break;
+      }
+      case '식당': {
+        // 둥근 테이블 + 의자들 + 카운터
+        mctx.fillStyle='#2a3160'; mctx.strokeStyle='#4a55a0'; mctx.lineWidth=3;
+        mctx.beginPath(); mctx.arc(cx, cy+18, 40, 0, Math.PI*2); mctx.fill(); mctx.stroke();
+        mctx.fillStyle='#39427e';
+        for(let i=0;i<6;i++){ const a=i*Math.PI/3; mctx.beginPath(); mctx.arc(cx+Math.cos(a)*62, cy+18+Math.sin(a)*62, 11, 0, Math.PI*2); mctx.fill(); }
+        box(cx-100, cy-58, 200, 20, '#2a3160', '#4a55a0');
+        break;
+      }
+      case '무기고': {
+        // 무기 거치대 + 상자 + 조준 스크린
+        for(let i=0;i<4;i++){ mctx.strokeStyle='#8891c2'; mctx.lineWidth=4; mctx.beginPath(); mctx.moveTo(cx-70+i*20, cy-30); mctx.lineTo(cx-70+i*20, cy+30); mctx.stroke(); }
+        box(cx+20, cy+4, 40, 34, '#2a3160', '#4a55a0');
+        box(cx+62, cy+10, 34, 28, '#2a3160', '#4a55a0');
+        screen(cx+24, cy-46, 40, 28, '#ff5470');
+        break;
+      }
+      case '항법실': case '함교': {
+        // 조종 콘솔 + 레이더 스크린 (스윕)
+        box(cx-90, cy+18, 180, 34, '#2a3160', '#4a55a0');
+        screen(cx-84, cy-46, 168, 54, '#0e1330');
+        mctx.save(); mctx.beginPath(); mctx.rect(cx-84, cy-46, 168, 54); mctx.clip();
+        mctx.strokeStyle='#48e6a0'; mctx.lineWidth=1.5;
+        mctx.beginPath(); mctx.arc(cx, cy-20, 30, 0, Math.PI*2); mctx.stroke();
+        mctx.beginPath(); mctx.arc(cx, cy-20, 16, 0, Math.PI*2); mctx.stroke();
+        const sw = t*0.002; mctx.strokeStyle='rgba(72,230,160,0.9)'; mctx.beginPath(); mctx.moveTo(cx,cy-20); mctx.lineTo(cx+Math.cos(sw)*30, cy-20+Math.sin(sw)*30); mctx.stroke();
+        mctx.restore();
+        break;
+      }
+      case '통신실': {
+        // 모니터 벽 + 안테나
+        screen(cx-70, cy-30, 44, 34, '#5ce1ff');
+        screen(cx-18, cy-30, 44, 34, '#48e6a0');
+        screen(cx+34, cy-30, 44, 34, '#ffce45');
+        mctx.strokeStyle='#8891c2'; mctx.lineWidth=3; mctx.beginPath(); mctx.moveTo(cx, cy+20); mctx.lineTo(cx, cy+54); mctx.stroke();
+        mctx.strokeStyle='#5ce1ff'; mctx.lineWidth=2;
+        for(let i=1;i<=3;i++){ mctx.beginPath(); mctx.arc(cx, cy+20, i*9, -2.4, -0.7); mctx.stroke(); }
+        break;
+      }
+      case '전기실': {
+        // 퓨즈 패널 + 번개
+        box(cx-70, cy-34, 140, 68, '#2a3160', '#4a55a0');
+        for(let i=0;i<5;i++){ mctx.fillStyle = (i%2? '#48e6a0':'#ff5470'); mctx.fillRect(cx-58+i*24, cy-24, 14, 22); }
+        mctx.fillStyle='#ffce45';
+        mctx.beginPath(); mctx.moveTo(cx-6,cy+2); mctx.lineTo(cx+8,cy+2); mctx.lineTo(cx-2,cy+16); mctx.lineTo(cx+10,cy+16); mctx.lineTo(cx-10,cy+38); mctx.lineTo(cx-2,cy+20); mctx.lineTo(cx-12,cy+20); mctx.closePath(); mctx.fill();
+        break;
+      }
+      case '산소실': {
+        // 산소 탱크 + 식물
+        for(let i=0;i<3;i++){ const x=cx-56+i*40; box(x-14, cy-30, 28, 66, '#2a3160', '#5ce1ff'); mctx.fillStyle='#bafcff'; mctx.beginPath(); mctx.arc(x, cy-30, 8, 0, Math.PI*2); mctx.fill(); }
+        mctx.fillStyle='#2a3160'; mctx.fillRect(cx+40, cy+8, 34, 28);
+        mctx.fillStyle='#48e6a0'; mctx.beginPath(); mctx.arc(cx+57, cy+2, 16, 0, Math.PI*2); mctx.arc(cx+45, cy+10, 11, 0, Math.PI*2); mctx.arc(cx+69, cy+10, 11, 0, Math.PI*2); mctx.fill();
+        break;
+      }
+      case '창고': {
+        // 쌓인 상자들
+        const bc=['#b07a4a','#8a6f1f','#2a3160'];
+        box(cx-70, cy+6, 44, 40, bc[0], '#5a4a2a');
+        box(cx-24, cy-2, 40, 48, bc[1], '#5a4a2a');
+        box(cx+20, cy+10, 46, 36, bc[2], '#4a55a0');
+        box(cx+22, cy-30, 40, 38, bc[0], '#5a4a2a');
+        break;
+      }
+      case '관리실': {
+        // 책상 + 지도 테이블
+        box(cx-84, cy+10, 90, 34, '#2a3160', '#4a55a0');
+        screen(cx-70, cy-40, 60, 40, '#5ce1ff');
+        box(cx+16, cy-20, 74, 60, '#2a3160', '#4a55a0');
+        mctx.strokeStyle='#48e6a0'; mctx.lineWidth=1.5; mctx.strokeRect(cx+24, cy-12, 58, 44);
+        break;
+      }
+      case '보안실': {
+        // 감시 모니터 벽 (여러 화면)
+        const cols=['#ff5470','#48e6a0','#5ce1ff','#ffce45','#b98bff','#ff9a4d'];
+        let n=0; for(let ry=0; ry<2; ry++) for(let rx=0; rx<3; rx++){ screen(cx-84+rx*58, cy-34+ry*36, 48, 28, cols[n%cols.length]); n++; }
+        break;
+      }
+      case '실험실': {
+        // 실험 테이블 + 플라스크
+        box(cx-90, cy+22, 180, 18, '#2a3160', '#4a55a0');
+        const fc=['#48e6a0','#ff8fd6','#5ce1ff'];
+        for(let i=0;i<3;i++){ const x=cx-60+i*60; mctx.fillStyle=fc[i]; mctx.beginPath(); mctx.moveTo(x-12,cy-30); mctx.lineTo(x-4,cy-30); mctx.lineTo(x-4,cy+2); mctx.lineTo(x+12,cy+22); mctx.lineTo(x-28,cy+22); mctx.lineTo(x-12,cy+2); mctx.closePath(); mctx.globalAlpha=0.85; mctx.fill(); mctx.globalAlpha=1; }
+        break;
+      }
+      case '정원': {
+        // 나무/덤불
+        mctx.fillStyle='#6b4a2a'; mctx.fillRect(cx-6, cy+2, 12, 34);
+        mctx.fillStyle='#48e6a0'; mctx.beginPath(); mctx.arc(cx, cy-14, 30, 0, Math.PI*2); mctx.arc(cx-22, cy+2, 20, 0, Math.PI*2); mctx.arc(cx+22, cy+2, 20, 0, Math.PI*2); mctx.fill();
+        mctx.fillStyle='#3bbf7f'; mctx.beginPath(); mctx.arc(cx-64, cy+22, 20, 0, Math.PI*2); mctx.arc(cx+64, cy+22, 20, 0, Math.PI*2); mctx.fill();
+        mctx.fillStyle='#ff8fd6'; mctx.beginPath(); mctx.arc(cx-10,cy-20,4,0,Math.PI*2); mctx.arc(cx+14,cy-8,4,0,Math.PI*2); mctx.fill();
+        break;
+      }
+    }
+    mctx.restore();
+  }
+
   // ---- draw helpers: task spots + kill effects ----
   function drawTaskSpot(x, y, mine, done, t){
     mctx.save();
@@ -1876,6 +2035,11 @@
     mctx.restore();
   }
 
+  const KILLFX_DUR = 1500; // ms
+  function partColor(base){
+    const pool = ['#ffffff', '#ff5470', '#ffd0d8', '#ffce45', base, base];
+    return pool[Math.floor(Math.random()*pool.length)];
+  }
   function detectDeaths(){
     if(!S.roomData) return;
     const players = S.roomData.players || {};
@@ -1885,30 +2049,109 @@
       const a = players[id].alive;
       if(S.prevAliveMap[id]===true && a===false){
         const pos = (id===S.myId) ? S.myPos : S.positions[id];
-        if(pos) S.deathFx.push({ x:pos.x, y:pos.y, t:performance.now(), color: colorHex(players[id].color) });
+        if(pos){
+          const color = colorHex(players[id].color);
+          const parts = [];
+          for(let i=0;i<34;i++){
+            const ang = Math.random()*Math.PI*2;
+            parts.push({
+              a: ang,
+              sp: 90 + Math.random()*380,           // px/sec outward
+              size: 2.5 + Math.random()*5,
+              spin: Math.random()*Math.PI*2,
+              col: partColor(color),
+              shape: Math.random()<0.4 ? 'star' : 'shard'
+            });
+          }
+          S.deathFx.push({ x:pos.x, y:pos.y, t:performance.now(), color, parts });
+        }
       }
       S.prevAliveMap[id] = a;
     }
   }
 
-  function drawKillFx(x, y, k, color){
-    mctx.save();
-    mctx.translate(x, y);
+  // 화려한 킬 이펙트: 섬광 + 다중 충격파 + 파티클 폭발 + 회전 슬래시 + 💥
+  function drawKillFx(fx, now){
+    const e = now - fx.t;          // ms
+    const t = e/1000;              // sec
+    const k = e/KILLFX_DUR;        // 0..1
     const R = PLAYER_R;
-    // expanding red burst
-    mctx.globalAlpha = (1-k)*0.9;
-    mctx.strokeStyle = '#ff5470';
-    mctx.lineWidth = 5*(1-k)+1;
-    mctx.beginPath(); mctx.arc(0,0, 10 + k*46, 0, Math.PI*2); mctx.stroke();
-    // slash marks
-    mctx.strokeStyle = '#ffd0d8';
-    mctx.lineWidth = 4*(1-k)+1;
-    for(const ang of [ -0.5, 0.4 ]){
-      mctx.save(); mctx.rotate(ang);
-      const len = R*1.4*(0.5+k);
-      mctx.beginPath(); mctx.moveTo(-len, 0); mctx.lineTo(len, 0); mctx.stroke();
+    mctx.save();
+    mctx.translate(fx.x, fx.y);
+
+    // 1) 중심 섬광 (빠르게 번쩍)
+    if(k < 0.4){
+      const fk = k/0.4;
+      mctx.globalAlpha = (1-fk);
+      const rad = R*2.8*(0.3 + fk);
+      const cg = mctx.createRadialGradient(0,0,0, 0,0, rad);
+      cg.addColorStop(0, '#ffffff');
+      cg.addColorStop(0.45, '#ffd0d8');
+      cg.addColorStop(1, 'rgba(255,84,112,0)');
+      mctx.fillStyle = cg;
+      mctx.beginPath(); mctx.arc(0,0, rad, 0, Math.PI*2); mctx.fill();
+    }
+
+    // 2) 다중 충격파 링 (색·타이밍 다르게)
+    const ringCols = ['#ffffff', '#ff5470', '#ffce45'];
+    for(let i=0;i<3;i++){
+      const rk = clamp(k*1.15 - i*0.13, 0, 1);
+      if(rk<=0 || rk>=1) continue;
+      mctx.globalAlpha = (1-rk)*0.85;
+      mctx.strokeStyle = ringCols[i];
+      mctx.lineWidth = 5*(1-rk)+1;
+      mctx.beginPath(); mctx.arc(0,0, 14 + rk*(80+i*26), 0, Math.PI*2); mctx.stroke();
+    }
+
+    // 3) 회전하는 글로우 슬래시 (별 모양 6갈래)
+    mctx.save();
+    mctx.rotate(k*4);
+    mctx.shadowColor = '#ff5470';
+    mctx.shadowBlur = 20*(1-k);
+    mctx.strokeStyle = '#ffe0e6';
+    mctx.lineCap = 'round';
+    mctx.globalAlpha = Math.max(0, 1 - k*1.25);
+    mctx.lineWidth = 6*(1-k)+1;
+    const sl = R*2.6*(0.5 + k*0.8);
+    for(let i=0;i<3;i++){
+      mctx.rotate(Math.PI/3);
+      mctx.beginPath(); mctx.moveTo(-sl,0); mctx.lineTo(sl,0); mctx.stroke();
+    }
+    mctx.restore();
+
+    // 4) 파티클 폭발 (별/파편이 사방으로)
+    for(const p of fx.parts){
+      const pa = Math.max(0, 1 - k*1.1);
+      if(pa<=0) continue;
+      const px = Math.cos(p.a)*p.sp*t;
+      const py = Math.sin(p.a)*p.sp*t + 150*t*t; // 살짝 중력
+      const sz = p.size*(1 - k*0.55);
+      if(sz<=0) continue;
+      mctx.save();
+      mctx.globalAlpha = pa;
+      mctx.translate(px, py);
+      mctx.rotate(p.spin + t*7);
+      mctx.fillStyle = p.col;
+      if(p.shape==='star'){
+        mctx.shadowColor = p.col; mctx.shadowBlur = 6;
+        drawStar(mctx, 0, 0, 5, sz*1.4, sz*0.6); mctx.fill();
+      } else {
+        mctx.fillRect(-sz/2, -sz/2, sz, sz*1.6);
+      }
       mctx.restore();
     }
+
+    // 5) 튀어오르는 💥
+    if(k < 0.85){
+      mctx.globalAlpha = Math.max(0, 1 - k/0.85);
+      mctx.font = 'bold '+(R*1.8)+'px sans-serif';
+      mctx.textAlign = 'center'; mctx.textBaseline = 'middle';
+      const pop = 1 - Math.pow(1-Math.min(1,k*3),2); // 빠르게 튀어오름
+      mctx.fillText('💥', 0, -R - pop*R*2.6);
+      mctx.textBaseline = 'alphabetic';
+    }
+
+    mctx.globalAlpha = 1;
     mctx.restore();
   }
 
