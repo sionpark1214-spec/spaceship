@@ -949,82 +949,113 @@
     return 'rgb('+r+','+g+','+b+')';
   }
 
-  // Draw an Among-Us style little astronaut (crewmate)
+  // Draw an original cute "space jelly" buddy — squishy blob, big eyes,
+  // blush cheeks, tiny feet, and a glowing star antenna.
   function drawCrewmate(x, y, hex, name, alive, isMe, facing, walk){
     const R = PLAYER_R;
     mctx.save();
     mctx.translate(x, y);
+    if(!alive) mctx.globalAlpha = 0.4;
 
-    if(!alive){
-      // dead: a little ghost bone marker, faded
-      mctx.globalAlpha = 0.4;
-    }
+    // squish + bob while walking
+    const bob = alive ? Math.abs(Math.sin(walk)) * R*0.10 : 0;
+    const squish = alive ? Math.sin(walk*2) * 0.05 : 0;
+    const footSwing = alive ? Math.sin(walk) * R*0.14 : 0;
+    mctx.translate(0, -bob);
 
-    // walking bob for legs
-    const legSwing = alive ? Math.sin(walk) * R*0.18 : 0;
-
-    mctx.save();
-    mctx.scale(facing, 1); // flip horizontally to face direction
-
-    const bodyDark = shade(hex, 0.72);
     const bodyLight = hex;
+    const bodyDark = shade(hex, 0.78);
 
-    // ---- legs ----
-    mctx.fillStyle = bodyDark;
-    roundRect(mctx, -R*0.55, R*0.55 - legSwing, R*0.5, R*0.7 + legSwing, R*0.22); mctx.fill();
-    roundRect(mctx, R*0.06, R*0.55 + legSwing, R*0.5, R*0.7 - legSwing, R*0.22); mctx.fill();
-
-    // ---- backpack (behind, on the back = left side when facing right) ----
-    mctx.fillStyle = bodyDark;
-    roundRect(mctx, -R*1.02, -R*0.55, R*0.5, R*1.25, R*0.24); mctx.fill();
-
-    // ---- body ----
-    const grad = mctx.createLinearGradient(-R, -R*1.3, R, R);
-    grad.addColorStop(0, bodyLight);
-    grad.addColorStop(1, shade(hex, 0.82));
-    mctx.fillStyle = grad;
-    mctx.beginPath();
-    // rounded-top capsule body
-    roundRect(mctx, -R*0.75, -R*1.3, R*1.5, R*2.15, R*0.72);
-    mctx.fill();
-
-    // body outline
-    mctx.lineWidth = isMe ? 2.4 : 1.6;
-    mctx.strokeStyle = isMe ? '#5ce1ff' : 'rgba(0,0,0,0.35)';
-    roundRect(mctx, -R*0.75, -R*1.3, R*1.5, R*2.15, R*0.72);
-    mctx.stroke();
-
-    // ---- visor (facing forward = right side) ----
+    // ---- soft shadow on the floor ----
     mctx.save();
-    mctx.translate(R*0.15, -R*0.62);
-    const vg = mctx.createLinearGradient(-R*0.5, -R*0.3, R*0.5, R*0.3);
-    vg.addColorStop(0, '#bfefff');
-    vg.addColorStop(1, '#6fa8d6');
-    mctx.fillStyle = vg;
+    mctx.globalAlpha *= 0.25;
+    mctx.fillStyle = '#000';
     mctx.beginPath();
-    mctx.ellipse(0, 0, R*0.62, R*0.42, 0, 0, Math.PI*2);
-    mctx.fill();
-    mctx.strokeStyle = 'rgba(0,0,0,0.3)';
-    mctx.lineWidth = 1.4;
-    mctx.stroke();
-    // shine
-    mctx.fillStyle = 'rgba(255,255,255,0.75)';
-    mctx.beginPath();
-    mctx.ellipse(R*0.18, -R*0.1, R*0.16, R*0.1, -0.4, 0, Math.PI*2);
+    mctx.ellipse(0, R*1.28 + bob, R*0.85, R*0.28, 0, 0, Math.PI*2);
     mctx.fill();
     mctx.restore();
 
-    mctx.restore(); // undo facing flip
+    // ---- little feet ----
+    mctx.fillStyle = bodyDark;
+    mctx.beginPath(); mctx.ellipse(-R*0.42, R*1.0 - footSwing, R*0.3, R*0.24, 0, 0, Math.PI*2); mctx.fill();
+    mctx.beginPath(); mctx.ellipse( R*0.42, R*1.0 + footSwing, R*0.3, R*0.24, 0, 0, Math.PI*2); mctx.fill();
 
-    // ---- dead marker ----
-    if(!alive){
-      mctx.globalAlpha = 1;
-      mctx.fillStyle = '#fff';
-      mctx.font = 'bold '+(R*0.95)+'px sans-serif';
-      mctx.textAlign = 'center';
-      mctx.textBaseline = 'middle';
-      mctx.fillText('✖', 0, -R*0.55);
-      mctx.textBaseline = 'alphabetic';
+    // ---- antenna with glowing star ----
+    mctx.strokeStyle = bodyDark;
+    mctx.lineWidth = R*0.14;
+    mctx.beginPath();
+    mctx.moveTo(0, -R*0.9);
+    mctx.quadraticCurveTo(R*0.25*facing, -R*1.35, R*0.1*facing, -R*1.6);
+    mctx.stroke();
+    const starX = R*0.1*facing, starY = -R*1.72;
+    mctx.save();
+    mctx.shadowColor = '#ffe27a';
+    mctx.shadowBlur = 8;
+    mctx.fillStyle = '#ffe27a';
+    drawStar(starX, starY, 5, R*0.28, R*0.13);
+    mctx.fill();
+    mctx.restore();
+
+    // ---- squishy body (rounder-than-tall blob) ----
+    const bw = R*1.02*(1+squish), bh = R*1.06*(1-squish);
+    const grad = mctx.createRadialGradient(-R*0.3, -R*0.4, R*0.2, 0, 0, R*1.3);
+    grad.addColorStop(0, shade(hex, 1.12));
+    grad.addColorStop(0.6, bodyLight);
+    grad.addColorStop(1, bodyDark);
+    mctx.fillStyle = grad;
+    mctx.beginPath();
+    mctx.ellipse(0, 0, bw, bh, 0, 0, Math.PI*2);
+    mctx.fill();
+
+    // body outline (cyan ring if it's me)
+    mctx.lineWidth = isMe ? 3 : 1.6;
+    mctx.strokeStyle = isMe ? '#5ce1ff' : 'rgba(0,0,0,0.28)';
+    mctx.beginPath();
+    mctx.ellipse(0, 0, bw, bh, 0, 0, Math.PI*2);
+    mctx.stroke();
+
+    // glossy highlight on top
+    mctx.fillStyle = 'rgba(255,255,255,0.35)';
+    mctx.beginPath();
+    mctx.ellipse(-R*0.32, -R*0.45, R*0.34, R*0.2, -0.5, 0, Math.PI*2);
+    mctx.fill();
+
+    if(alive){
+      // ---- face (shifts toward facing direction) ----
+      const fx = facing * R*0.14;
+      // eyes
+      const eyeY = -R*0.05, eyeDX = R*0.34, eyeRX = R*0.2, eyeRY = R*0.26;
+      for(const s of [-1, 1]){
+        mctx.fillStyle = '#ffffff';
+        mctx.beginPath(); mctx.ellipse(fx + s*eyeDX, eyeY, eyeRX, eyeRY, 0, 0, Math.PI*2); mctx.fill();
+        // pupil
+        mctx.fillStyle = '#22243a';
+        mctx.beginPath(); mctx.ellipse(fx + s*eyeDX + facing*R*0.05, eyeY + R*0.05, R*0.1, R*0.13, 0, 0, Math.PI*2); mctx.fill();
+        // sparkle
+        mctx.fillStyle = '#ffffff';
+        mctx.beginPath(); mctx.ellipse(fx + s*eyeDX + facing*R*0.02, eyeY - R*0.03, R*0.04, R*0.05, 0, 0, Math.PI*2); mctx.fill();
+      }
+      // blush cheeks
+      mctx.fillStyle = 'rgba(255,120,150,0.45)';
+      mctx.beginPath(); mctx.ellipse(fx - R*0.5, R*0.3, R*0.15, R*0.1, 0, 0, Math.PI*2); mctx.fill();
+      mctx.beginPath(); mctx.ellipse(fx + R*0.5, R*0.3, R*0.15, R*0.1, 0, 0, Math.PI*2); mctx.fill();
+      // smile
+      mctx.strokeStyle = '#22243a';
+      mctx.lineWidth = R*0.09;
+      mctx.lineCap = 'round';
+      mctx.beginPath();
+      mctx.arc(fx, R*0.18, R*0.2, 0.15*Math.PI, 0.85*Math.PI);
+      mctx.stroke();
+    } else {
+      // dead: x_x eyes
+      mctx.strokeStyle = '#22243a';
+      mctx.lineWidth = R*0.1;
+      mctx.lineCap = 'round';
+      for(const s of [-1,1]){
+        const ex = s*R*0.34, ey = -R*0.02, d = R*0.13;
+        mctx.beginPath(); mctx.moveTo(ex-d,ey-d); mctx.lineTo(ex+d,ey+d); mctx.stroke();
+        mctx.beginPath(); mctx.moveTo(ex+d,ey-d); mctx.lineTo(ex-d,ey+d); mctx.stroke();
+      }
     }
 
     // ---- name tag ----
@@ -1033,11 +1064,25 @@
     mctx.textAlign = 'center';
     const tw = mctx.measureText(name).width;
     mctx.fillStyle = 'rgba(10,14,30,0.55)';
-    roundRect(mctx, -tw/2 - 6, -R*2.05, tw + 12, 18, 8); mctx.fill();
+    roundRect(mctx, -tw/2 - 6, -R*2.35, tw + 12, 18, 8); mctx.fill();
     mctx.fillStyle = isMe ? '#5ce1ff' : '#eef0fb';
-    mctx.fillText(name, 0, -R*1.75 + 4);
+    mctx.fillText(name, 0, -R*2.05 + 4);
 
     mctx.restore();
+  }
+
+  function drawStar(cx, cy, spikes, outer, inner){
+    let rot = -Math.PI/2;
+    const step = Math.PI/spikes;
+    mctx.beginPath();
+    mctx.moveTo(cx + Math.cos(rot)*outer, cy + Math.sin(rot)*outer);
+    for(let i=0;i<spikes;i++){
+      rot += step;
+      mctx.lineTo(cx + Math.cos(rot)*inner, cy + Math.sin(rot)*inner);
+      rot += step;
+      mctx.lineTo(cx + Math.cos(rot)*outer, cy + Math.sin(rot)*outer);
+    }
+    mctx.closePath();
   }
 
   // ============================================================
