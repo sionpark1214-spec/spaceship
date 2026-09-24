@@ -570,7 +570,7 @@
   const TASK_RANGE = 60;
   const TASKS_PER_PLAYER = 5;
   const VIEW_UNITS = 1050;   // 화면에 한 번에 보이는 월드 폭(대략) — 카메라 확대
-  const LOOK_AHEAD = 260;    // 움직이는 쪽을 더 보여주는 거리
+  const LOOK_AHEAD = 130;    // 움직이는 쪽을 더 보여주는 거리 (너무 크면 멈출 때 흔들림)
 
   // 15개 방을 5x4... 아니라 5열 x 3행 격자로 배치, 복도로 연결
   const GRID = { cols:5, rows:3, x0:120, y0:120, rw:340, rh:240, cx:540, cy:460 };
@@ -1151,6 +1151,7 @@
           S.lastMoveDir = { x: dx/len, y: dy/len };
         }
       }
+      if(!S.moving) S.myWalk = 0; // 멈추면 걷기 애니메이션 리셋 (흔들림 방지)
     }
 
     drawMap();
