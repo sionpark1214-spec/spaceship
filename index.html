@@ -729,8 +729,8 @@
     $('lobbyHostControls').classList.toggle('hidden', !S.isHost);
     $('lobbyGuestNote').classList.toggle('hidden', S.isHost);
     const startBtn = $('btnStartGame');
-    startBtn.disabled = count < 3;
-    startBtn.textContent = count < 3 ? `▶ 게임 시작 (${count}/최소3명)` : '▶ 게임 시작';
+    startBtn.disabled = count < 1;
+    startBtn.textContent = count <= 1 ? '▶ 혼자 시작 (테스트)' : '▶ 게임 시작';
   }
 
   function renderColorPicker(){
@@ -772,7 +772,7 @@
   async function startGame(){
     if(!S.isHost || !S.roomData) return;
     const ids = Object.keys(S.roomData.players || {});
-    if(ids.length < 3) return;
+    if(ids.length < 1) return;
     const n = ids.length;
     const impostorCount = n >= 14 ? 3 : (n >= 7 ? 2 : 1);
     const shuffled = ids.slice().sort(()=>Math.random()-0.5);
@@ -1421,6 +1421,8 @@
 
   function checkWin(players, impostorMap){
     impostorMap = impostorMap || {};
+    // 테스트 모드: 3명 미만이면 게임이 자동으로 끝나지 않음 (혼자 돌아다니기 가능)
+    if(Object.keys(players).length < 3) return null;
     const aliveIds = Object.keys(players).filter(id=>players[id].alive);
     const aliveImpostors = aliveIds.filter(id=>impostorMap[id]).length;
     const aliveCrew = aliveIds.length - aliveImpostors;
