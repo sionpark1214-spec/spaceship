@@ -813,7 +813,7 @@
       if(!r){ continue; }
       const players = r.players || {};
       const count = Object.keys(players).length;
-      const stale = r.createdAt && (now - r.createdAt) > 3*3600*1000; // 3시간 넘은 방
+      const stale = r.createdAt && (now - r.createdAt) > 30*60*1000; // 30분 넘은 방
       // 끝났거나 / 아무도 없거나 / 오래된 방은 DB에서 삭제
       if(r.status === 'ended' || count === 0 || stale){ toDelete.push(code); continue; }
       // 목록에는 '대기실' 상태만 (게임 중인 방은 숨김)
@@ -864,8 +864,9 @@
     });
     S.unsubPos = () => pRef.off('value', posHandler);
 
-    // remove my position when I disconnect
+    // 접속이 끊기면(탭 닫기 등) 자동으로 방에서 빠지게 → 유령 방이 안 쌓임
     try{ roomRef('pos/'+S.myId).onDisconnect().remove(); }catch(e){}
+    try{ roomRef('players/'+S.myId).onDisconnect().remove(); }catch(e){}
   }
 
   // ============================================================
