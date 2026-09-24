@@ -329,6 +329,17 @@
   .room-row .rcount{ font-family:'Space Mono',monospace; font-size:13px; color:var(--cyan); }
   .room-empty{ text-align:center; color:var(--text-dim); font-size:13.5px; padding:26px 8px; line-height:1.7; }
 
+  /* ---------- Meeting chat ---------- */
+  .chat-box{ margin-top:12px; border-top:1px solid var(--line); padding-top:10px; }
+  .chat-msgs{ height:120px; overflow-y:auto; display:flex; flex-direction:column; gap:5px; margin-bottom:8px; }
+  .chat-msg{ font-size:13px; line-height:1.4; word-break:break-word; }
+  .chat-msg .cname{ font-weight:700; margin-right:5px; }
+  .chat-msg.dead .cname::after{ content:' 👻'; }
+  .chat-empty{ color:var(--text-dim); font-size:12px; text-align:center; padding:16px 0; }
+  .chat-input-row{ display:flex; gap:8px; }
+  .chat-input-row input{ flex:1; padding:10px 12px; border-radius:10px; border:1.5px solid var(--line); background:var(--void); color:var(--text); font-size:15px; font-family:inherit; outline:none; }
+  .chat-input-row input:focus{ border-color:var(--cyan); }
+
   .result-panel{ text-align:center; }
   .result-panel .who{ font-size:22px; margin:10px 0 4px; }
   .result-panel .verdict{ font-size:15px; color: var(--text-dim); margin-bottom: 6px; }
@@ -524,6 +535,13 @@
       <div class="vote-row" id="voteSkipRow" style="cursor:pointer;">
         <div class="pname">🤷 스킵 (모르겠어요)</div>
         <div class="vote-count mono" id="skipCount">0</div>
+      </div>
+      <div class="chat-box">
+        <div class="chat-msgs" id="chatMsgs"></div>
+        <div class="chat-input-row">
+          <input type="text" id="chatInput" maxlength="80" placeholder="채팅 입력..." autocomplete="off" />
+          <button class="btn btn-primary btn-small" id="chatSend" style="margin-top:0;">보내기</button>
+        </div>
       </div>
     </div>
   </div>
@@ -2510,6 +2528,50 @@
     $('voteSkipRow').className = 'vote-row' + (S.myVoteTarget==='skip'?' voted-mine':'');
     $('voteSkipRow').style.opacity = myAlive ? '1' : '0.5';
     $('voteSkipRow').onclick = myAlive ? ()=>castVote('skip') : null;
+    renderChat();
+  }
+
+  function renderChat(){
+    const box = $('chatMsgs');
+    if(!box) return;
+    const players = (S.roomData && S.roomData.players) || {};
+    const chat = (S.roomData && S.roomData.meeting && S.roomData.meeting.chat) || {};
+    const msgs = Object.keys(chat).map(k=>chat[k]).sort((a,b)=>(a.t||0)-(b.t||0));
+    const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 30;
+    box.innerHTML = '';
+    if(msgs.length === 0){
+      box.innerHTML = '<div class="chat-empty">회의 중 여기서 이야기할 수 있어요 💬</div>';
+    } else {
+      for(const m of msgs){
+        const p = players[m.by];
+        const div = document.createElement('div');
+        div.className = 'chat-msg' + (p && !p.alive ? ' dead' : '');
+        const nameSpan = document.createElement('span'); nameSpan.className='cname';
+        nameSpan.style.color = colorHex(p ? p.color : null);
+        nameSpan.textContent = (m.name||'?') + ':';
+        const txt = document.createElement('span'); txt.textContent = m.text;
+        div.appendChild(nameSpan); div.appendChild(txt);
+        box.appendChild(div);
+      }
+    }
+    if(atBottom) box.scrollTop = box.scrollHeight;
+    // 죽은 사람은 입력 비활성화
+    const myAlive = players[S.myId] && players[S.myId].alive;
+    const input = $('chatInput');
+    input.disabled = !myAlive;
+    input.placeholder = myAlive ? '채팅 입력...' : '죽은 사람은 채팅할 수 없어요';
+  }
+
+  async function sendChat(){
+    const input = $('chatInput');
+    const text = input.value.trim();
+    if(!text || !S.roomData || S.roomData.status!=='meeting') return;
+    const myAlive = S.roomData.players[S.myId] && S.roomData.players[S.myId].alive;
+    if(!myAlive) return;
+    input.value = '';
+    try{
+      await roomRef('meeting/chat').push({ by: S.myId, name: S.myName, text: text.slice(0,80), t: Date.now() });
+    }catch(e){}
   }
 
   async function castVote(target){
@@ -2720,6 +2782,8 @@
   $('btnKill').addEventListener('click', doKill);
   $('btnMeeting').addEventListener('click', callMeeting);
   $('btnReport').addEventListener('click', doReport);
+  $('chatSend').addEventListener('click', sendChat);
+  $('chatInput').addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); sendChat(); } });
   $('btnTask').addEventListener('click', openMission);
   $('btnMissionClose').addEventListener('click', closeMission);
   $('btnCctv').addEventListener('click', openCctv);
