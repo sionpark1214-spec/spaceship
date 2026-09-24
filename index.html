@@ -222,7 +222,45 @@
   }
   .action-btn.kill{ background: var(--danger); color:#320310; }
   .action-btn.meeting{ background: var(--accent); color:#3a2c02; }
+  .action-btn.task{ background: var(--success); color:#053322; }
   .action-btn:disabled{ opacity:0.3; }
+
+  /* ---------- Task progress bar ---------- */
+  .task-bar{
+    position:absolute; top: max(46px, calc(env(safe-area-inset-top) + 40px)); left:50%; transform:translateX(-50%);
+    z-index:5; display:flex; align-items:center; gap:9px;
+    background: rgba(22,27,54,0.85); backdrop-filter: blur(6px);
+    border:1px solid var(--line); border-radius:14px; padding:7px 12px;
+    max-width: 78vw;
+  }
+  .task-bar-label{ font-size:11.5px; color:var(--text-dim); white-space:nowrap; }
+  .task-bar-track{ width: min(38vw, 220px); height:10px; border-radius:6px; background: var(--panel-3); overflow:hidden; }
+  .task-bar-fill{ height:100%; width:0%; border-radius:6px; background: linear-gradient(90deg, var(--success), var(--cyan)); transition: width .35s ease; }
+  .task-bar-num{ font-size:12px; color:var(--success); white-space:nowrap; }
+
+  /* ---------- Mission mini-games ---------- */
+  .mg-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin:8px 0; }
+  .mg-cell{
+    aspect-ratio:1; border-radius:12px; border:2px solid var(--line);
+    background: var(--panel-3); color:var(--text); font-family:'Space Mono',monospace;
+    font-size:26px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center;
+  }
+  .mg-cell:active{ transform:scale(0.95); }
+  .mg-cell.done{ background: var(--success); color:#053322; border-color:var(--success); }
+  .mg-tap-btn{
+    width:100%; padding:26px; border-radius:16px; border:none; cursor:pointer;
+    background: var(--accent); color:#3a2c02; font-family:'Jua',sans-serif; font-size:22px;
+    margin:8px 0;
+  }
+  .mg-tap-btn:active{ transform:scale(0.97); }
+  .mg-progress-track{ width:100%; height:22px; border-radius:11px; background:var(--panel-3); overflow:hidden; margin:12px 0; }
+  .mg-progress-fill{ height:100%; width:0%; background:linear-gradient(90deg,var(--accent),var(--success)); border-radius:11px; transition: width .1s; }
+  .mg-hold-btn{
+    width:100%; padding:30px; border-radius:16px; border:none; cursor:pointer;
+    background: var(--cyan); color:#04262e; font-family:'Jua',sans-serif; font-size:22px; margin:8px 0;
+    -webkit-user-select:none; user-select:none;
+  }
+  .mg-success{ text-align:center; color:var(--success); font-family:'Jua',sans-serif; font-size:24px; padding:20px 0; }
 
   .dpad{
     position:absolute; right: max(18px, env(safe-area-inset-right)); bottom: max(90px, env(safe-area-inset-bottom));
@@ -330,6 +368,12 @@
     <div class="hud-top-left" id="hudPlayerList"></div>
     <div class="role-banner hidden" id="roleBanner"></div>
 
+    <div class="task-bar" id="taskBar">
+      <div class="task-bar-label">미션 진행도</div>
+      <div class="task-bar-track"><div class="task-bar-fill" id="taskBarFill"></div></div>
+      <div class="task-bar-num mono" id="taskBarNum">0 / 0</div>
+    </div>
+
     <div class="dpad" id="dpad">
       <button class="up" data-dir="up">▲</button>
       <button class="down" data-dir="down">▼</button>
@@ -338,8 +382,22 @@
     </div>
 
     <div class="controls-bottom">
+      <button class="action-btn task hidden" id="btnTask">🛠 미션</button>
       <button class="action-btn kill hidden" id="btnKill">🔪 제거하기</button>
       <button class="action-btn meeting" id="btnMeeting">🚨 긴급회의</button>
+    </div>
+  </div>
+
+  <!-- MISSION OVERLAY -->
+  <div id="overlayMission" class="overlay hidden">
+    <div class="meeting-panel">
+      <div class="meeting-header">
+        <p class="eyebrow" id="missionRoom">미션</p>
+        <h2 id="missionTitle" style="margin:4px 0 2px;font-size:22px;">미션</h2>
+        <p class="subtitle" id="missionHint" style="margin:4px 0 0;"></p>
+      </div>
+      <div id="missionBody"></div>
+      <button class="btn btn-ghost btn-small" id="btnMissionClose" style="width:100%;margin-top:14px;">닫기</button>
     </div>
   </div>
 
@@ -473,31 +531,33 @@
     {id:'black',   hex:'#3a4066', name:'검정'}
   ];
   const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  const MAP_W = 1000, MAP_H = 620;
+  const MAP_W = 1360, MAP_H = 860;
   const PLAYER_R = 17;
-  const MOVE_SPEED = 260; // px/sec
-  const KILL_RANGE = 60;
+  const MOVE_SPEED = 300; // px/sec
+  const KILL_RANGE = 64;
   const KILL_COOLDOWN_MS = 12000;
-  const MEETING_COOLDOWN_MS = 8000;
-  const MEETING_DURATION_MS = 20000;
+  const MEETING_COOLDOWN_MS = 18000; // 회의 끝난 뒤 다음 회의까지 쿨타임
+  const MEETING_DURATION_MS = 25000;
+  const TASK_RANGE = 60;
+  const TASKS_PER_PLAYER = 4;
 
   // Rooms (walls around them) + corridors that connect them (open doorways)
   const ROOMS = [
-    {name:'무기고', x:60,  y:70,  w:200, h:150},
-    {name:'식당',   x:400, y:60,  w:200, h:170},
-    {name:'항법실', x:740, y:70,  w:200, h:150},
-    {name:'전기실', x:60,  y:400, w:200, h:150},
-    {name:'의무실', x:400, y:400, w:200, h:150},
-    {name:'원자로', x:740, y:400, w:200, h:150}
+    {name:'식당',   x:560, y:340, w:300, h:200},  // 가운데 허브
+    {name:'무기고', x:100, y:90,  w:280, h:180},
+    {name:'통신실', x:600, y:80,  w:260, h:160},
+    {name:'항법실', x:1000,y:90,  w:280, h:180},
+    {name:'전기실', x:100, y:610, w:280, h:180},
+    {name:'의무실', x:600, y:630, w:260, h:160},
+    {name:'원자로', x:1000,y:610, w:280, h:180}
   ];
   const CORRIDORS = [
-    {x:60,  y:295, w:880, h:60},  // 가운데 큰 복도 (좌우 연결)
-    {x:130, y:210, w:60,  h:95},  // 무기고 → 복도
-    {x:130, y:345, w:60,  h:60},  // 전기실 → 복도
-    {x:810, y:210, w:60,  h:95},  // 항법실 → 복도
-    {x:810, y:345, w:60,  h:60},  // 원자로 → 복도
-    {x:470, y:220, w:60,  h:85},  // 식당 → 복도
-    {x:470, y:345, w:60,  h:60}   // 의무실 → 복도
+    {x:100, y:400, w:1180, h:80},  // 가로 큰 복도
+    {x:690, y:90,  w:80,  h:700},  // 세로 큰 복도
+    {x:210, y:250, w:70,  h:160},  // 무기고 → 가로복도
+    {x:1090,y:250, w:70,  h:160},  // 항법실 → 가로복도
+    {x:210, y:470, w:70,  h:150},  // 전기실 → 가로복도
+    {x:1090,y:470, w:70,  h:150}   // 원자로 → 가로복도
   ];
   const WALKABLE = ROOMS.concat(CORRIDORS);
   function walkableAt(x, y){
@@ -506,6 +566,17 @@
     }
     return false;
   }
+
+  // Task spots — one per room (crew walk here and complete a mini-game)
+  const TASK_SPOTS = [
+    {id:'t_weapon', room:'무기고', name:'무기 정렬',   x:240, y:180},
+    {id:'t_comms',  room:'통신실', name:'통신 연결',   x:730, y:160},
+    {id:'t_nav',    room:'항법실', name:'항로 입력',   x:1140,y:180},
+    {id:'t_elec',   room:'전기실', name:'전선 연결',   x:240, y:700},
+    {id:'t_med',    room:'의무실', name:'검체 스캔',   x:730, y:710},
+    {id:'t_reactor',room:'원자로', name:'원자로 안정', x:1140,y:700},
+    {id:'t_cafe',   room:'식당',   name:'쓰레기 비우기',x:710, y:440}
+  ];
 
   function randCode(){
     let s = '';
@@ -706,6 +777,7 @@
     $('gameWrap').classList.toggle('hidden', !(v==='playing'||v==='meeting'||v==='ended'));
     $('overlayMeeting').classList.toggle('hidden', v!=='meeting');
     $('overlayEnd').classList.toggle('hidden', v!=='ended');
+    if(v!=='playing' && S.missionOpen) closeMission();
   }
 
   function enterLobby(){
@@ -786,9 +858,34 @@
     updates['lastEjected'] = null;
     updates['winner'] = null;
     updates['pos'] = null;
+    updates['nextMeetingAt'] = 0;
     updates['round'] = (S.roomData.round||0) + 1;
-    for(const id of ids){ updates['players/'+id+'/alive'] = true; }
+    for(const id of ids){
+      updates['players/'+id+'/alive'] = true;
+      // assign each player a random set of task spots
+      const spots = TASK_SPOTS.map(t=>t.id).sort(()=>Math.random()-0.5).slice(0, TASKS_PER_PLAYER);
+      const taskMap = {};
+      spots.forEach(sid => { taskMap[sid] = false; });
+      updates['players/'+id+'/tasks'] = taskMap;
+      updates['players/'+id+'/tasksDone'] = 0;
+    }
     await roomRef('').update(updates);
+  }
+
+  // Overall CREW task progress (0..1); impostor tasks don't count
+  function taskProgress(){
+    if(!S.roomData) return {done:0, total:0};
+    const players = S.roomData.players || {};
+    const imp = S.roomData.impostorMap || {};
+    let done = 0, total = 0;
+    for(const id in players){
+      if(imp[id]) continue;
+      const t = players[id].tasks || {};
+      const keys = Object.keys(t);
+      total += keys.length;
+      done += keys.filter(k => t[k]).length;
+    }
+    return {done, total};
   }
 
   // ============================================================
@@ -824,8 +921,10 @@
   function enterGame(){
     stopLobbyScene();
     setView('playing');
-    // spawn inside the 식당 (cafeteria)
-    S.myPos = { x: 430 + Math.random()*140, y: 95 + Math.random()*110 };
+    // spawn inside the 식당 (cafeteria hub)
+    S.myPos = { x: 620 + Math.random()*180, y: 380 + Math.random()*120 };
+    S.missionOpen = false;
+    S.deathFx = [];
     showRoleBanner();
     renderHudPlayerList();
     startGameLoop();
@@ -920,7 +1019,7 @@
 
     if(S.view === 'playing'){
       const alive = S.roomData && S.roomData.players[S.myId] ? S.roomData.players[S.myId].alive : true;
-      if(alive){
+      if(alive && !S.missionOpen){
         let dx=0, dy=0;
         if(S.keys.up) dy -= 1;
         if(S.keys.down) dy += 1;
@@ -993,6 +1092,18 @@
       mctx.fillText(r.name, r.x + r.w/2, r.y + 26);
     }
 
+    // task spots
+    const myTasks = (S.roomData && S.roomData.players[S.myId] && S.roomData.players[S.myId].tasks) || {};
+    const nowT = performance.now();
+    for(const spot of TASK_SPOTS){
+      const mine = (spot.id in myTasks);
+      const done = myTasks[spot.id] === true;
+      drawTaskSpot(spot.x, spot.y, mine, done, nowT);
+    }
+
+    // detect deaths for kill effects
+    detectDeaths();
+
     const peers = getRoomPeers();
     S.peerFacing = S.peerFacing || {};
     S.peerPrevX = S.peerPrevX || {};
@@ -1011,6 +1122,10 @@
     }
     const myAlive = S.roomData && S.roomData.players[S.myId] ? S.roomData.players[S.myId].alive : true;
     drawCrewmate(mctx, S.myPos.x, S.myPos.y, colorHex(S.myColorId), S.myName + ' (나)', myAlive, true, S.myFacing||1, S.myWalk||0);
+
+    // kill effects (slash bursts over recent deaths)
+    S.deathFx = (S.deathFx||[]).filter(f => performance.now()-f.t < 800);
+    for(const f of S.deathFx){ drawKillFx(f.x, f.y, (performance.now()-f.t)/800, f.color); }
 
     mctx.restore();
   }
@@ -1384,31 +1499,70 @@
     return (best && bestD <= KILL_RANGE) ? best : null;
   }
 
+  function nearestMyTask(){
+    const me = S.roomData.players[S.myId];
+    if(!me || !me.tasks) return null;
+    let best=null, bestD=Infinity;
+    for(const spot of TASK_SPOTS){
+      if(!(spot.id in me.tasks) || me.tasks[spot.id]===true) continue;
+      const d = dist(S.myPos.x, S.myPos.y, spot.x, spot.y);
+      if(d < bestD){ bestD = d; best = spot; }
+    }
+    return (best && bestD <= TASK_RANGE) ? best : null;
+  }
+
   function updateKillButtonVisibility(){
-    const btnKill = $('btnKill');
-    const btnMeeting = $('btnMeeting');
+    const btnKill = $('btnKill'), btnMeeting = $('btnMeeting'), btnTask = $('btnTask');
     if(S.view !== 'playing' || !S.roomData){
-      btnKill.classList.add('hidden');
+      btnKill.classList.add('hidden'); btnTask.classList.add('hidden');
       return;
     }
-    const myAlive = S.roomData.players[S.myId] ? S.roomData.players[S.myId].alive : false;
+    const me = S.roomData.players[S.myId];
+    const myAlive = me ? me.alive : false;
     const role = myRole();
     const now = Date.now();
-    if(role==='impostor' && myAlive){
+
+    // kill button (+ cooldown countdown)
+    if(role==='impostor' && myAlive && !S.missionOpen){
       const target = nearestAliveTarget();
       btnKill.classList.toggle('hidden', !target);
-      btnKill.disabled = now < S.killCooldownUntil;
+      const onCd = now < S.killCooldownUntil;
+      btnKill.disabled = onCd;
       btnKill.dataset.targetId = target ? target.id : '';
+      btnKill.textContent = onCd ? ('🔪 '+Math.ceil((S.killCooldownUntil-now)/1000)+'초') : '🔪 제거하기';
     } else {
       btnKill.classList.add('hidden');
     }
-    btnMeeting.disabled = !myAlive || now < S.meetingCooldownUntil || S.roomData.status !== 'playing';
+
+    // task button (near one of my unfinished tasks)
+    const spot = (myAlive && !S.missionOpen) ? nearestMyTask() : null;
+    if(spot){ btnTask.classList.remove('hidden'); btnTask.dataset.spotId = spot.id; }
+    else { btnTask.classList.add('hidden'); }
+
+    // meeting button (shared cooldown countdown)
+    const nextAt = S.roomData.nextMeetingAt || 0;
+    const cdMs = nextAt - now;
+    btnMeeting.disabled = !myAlive || cdMs > 0 || S.roomData.status !== 'playing';
+    btnMeeting.textContent = cdMs > 0 ? ('🚨 '+Math.ceil(cdMs/1000)+'초') : '🚨 긴급회의';
+
+    // task progress bar
+    const pr = taskProgress();
+    const pct = pr.total > 0 ? Math.round(pr.done/pr.total*100) : 0;
+    $('taskBarFill').style.width = pct + '%';
+    $('taskBarNum').textContent = pr.done + ' / ' + pr.total;
   }
 
   async function doKill(){
     const targetId = $('btnKill').dataset.targetId;
     if(!targetId || !S.roomData) return;
     S.killCooldownUntil = Date.now() + KILL_COOLDOWN_MS;
+    // kill motion: lunge toward target + slash effect
+    const tpos = S.positions[targetId];
+    if(tpos){
+      S.slashFx = S.slashFx || [];
+      S.slashFx.push({ x: tpos.x, y: tpos.y, t: performance.now() });
+      S.killLunge = { x: tpos.x, y: tpos.y, until: performance.now()+260 };
+    }
     const players = {};
     for(const id in S.roomData.players){ players[id] = { ...S.roomData.players[id] }; }
     if(players[targetId]) players[targetId].alive = false;
@@ -1432,11 +1586,208 @@
   }
 
   // ============================================================
+  // Missions (walk to a task spot, complete a mini-game)
+  // ============================================================
+  function openMission(){
+    const spotId = $('btnTask').dataset.spotId;
+    const spot = TASK_SPOTS.find(t=>t.id===spotId);
+    if(!spot) return;
+    S.missionOpen = true;
+    S.missionSpotId = spotId;
+    $('missionRoom').textContent = spot.room + ' 미션';
+    $('missionTitle').textContent = spot.name;
+    $('overlayMission').classList.remove('hidden');
+    const games = [missionSequence, missionTap, missionHold];
+    const game = games[Math.floor(Math.random()*games.length)];
+    game();
+  }
+
+  function closeMission(){
+    S.missionOpen = false;
+    S.missionSpotId = null;
+    $('overlayMission').classList.add('hidden');
+    $('missionBody').innerHTML = '';
+  }
+
+  function missionDone(){
+    const spotId = S.missionSpotId;
+    $('missionHint').textContent = '';
+    $('missionBody').innerHTML = '<div class="mg-success">✅ 미션 성공!</div>';
+    completeTask(spotId);
+    setTimeout(closeMission, 900);
+  }
+
+  // Mini-game 1: press numbers 1..5 in order
+  function missionSequence(){
+    $('missionHint').textContent = '숫자를 1부터 순서대로 눌러줘!';
+    const body = $('missionBody');
+    body.innerHTML = '';
+    const grid = document.createElement('div');
+    grid.className = 'mg-grid';
+    const positions = [0,1,2,3,4,5,6,7,8].sort(()=>Math.random()-0.5).slice(0,5);
+    const cellNums = {};
+    positions.forEach((pos,i)=>{ cellNums[pos] = i+1; });
+    let next = 1;
+    for(let i=0;i<9;i++){
+      const cell = document.createElement('button');
+      cell.className = 'mg-cell';
+      if(cellNums[i]){
+        cell.textContent = cellNums[i];
+        cell.addEventListener('click', ()=>{
+          if(cellNums[i] === next){
+            cell.classList.add('done'); cell.disabled = true; next++;
+            if(next > 5) missionDone();
+          } else {
+            // wrong order: reset
+            next = 1;
+            grid.querySelectorAll('.mg-cell').forEach(c=>{ if(c.textContent){ c.classList.remove('done'); c.disabled=false; } });
+          }
+        });
+      } else {
+        cell.style.visibility = 'hidden';
+      }
+      grid.appendChild(cell);
+    }
+    body.appendChild(grid);
+  }
+
+  // Mini-game 2: tap a button 12 times
+  function missionTap(){
+    const need = 12;
+    let count = 0;
+    $('missionHint').textContent = '버튼을 빠르게 '+need+'번 눌러줘!';
+    const body = $('missionBody');
+    body.innerHTML = '';
+    const track = document.createElement('div'); track.className='mg-progress-track';
+    const fill = document.createElement('div'); fill.className='mg-progress-fill'; track.appendChild(fill);
+    const btn = document.createElement('button'); btn.className='mg-tap-btn'; btn.textContent='👆 탭! (0/'+need+')';
+    btn.addEventListener('click', ()=>{
+      count++; fill.style.width = Math.min(100, count/need*100)+'%';
+      btn.textContent = '👆 탭! ('+count+'/'+need+')';
+      if(count>=need){ btn.disabled=true; missionDone(); }
+    });
+    body.appendChild(track); body.appendChild(btn);
+  }
+
+  // Mini-game 3: hold a button for 2.2s
+  function missionHold(){
+    const need = 2200;
+    $('missionHint').textContent = '버튼을 꾹 누르고 있어! (떼면 처음부터)';
+    const body = $('missionBody');
+    body.innerHTML = '';
+    const track = document.createElement('div'); track.className='mg-progress-track';
+    const fill = document.createElement('div'); fill.className='mg-progress-fill'; track.appendChild(fill);
+    const btn = document.createElement('button'); btn.className='mg-hold-btn'; btn.textContent='🔧 꾹 누르기';
+    let raf=null, start=0, done=false;
+    const tick=()=>{
+      const held = performance.now()-start;
+      fill.style.width = Math.min(100, held/need*100)+'%';
+      if(held>=need){ done=true; stop(); btn.disabled=true; missionDone(); return; }
+      raf=requestAnimationFrame(tick);
+    };
+    const startHold=(e)=>{ if(done) return; e.preventDefault(); start=performance.now(); if(raf)cancelAnimationFrame(raf); raf=requestAnimationFrame(tick); };
+    const stop=()=>{ if(raf){cancelAnimationFrame(raf); raf=null;} if(!done) fill.style.width='0%'; };
+    btn.addEventListener('mousedown', startHold);
+    btn.addEventListener('touchstart', startHold, {passive:false});
+    btn.addEventListener('mouseup', stop);
+    btn.addEventListener('mouseleave', stop);
+    btn.addEventListener('touchend', stop);
+    btn.addEventListener('touchcancel', stop);
+    body.appendChild(track); body.appendChild(btn);
+  }
+
+  async function completeTask(spotId){
+    const me = S.roomData && S.roomData.players[S.myId];
+    if(!me || !me.tasks || !(spotId in me.tasks) || me.tasks[spotId]===true) return;
+    // local projection for crew-task win
+    const players = {};
+    for(const id in S.roomData.players){
+      players[id] = { ...S.roomData.players[id], tasks: { ...(S.roomData.players[id].tasks||{}) } };
+    }
+    players[S.myId].tasks[spotId] = true;
+    const updates = {};
+    updates['players/'+S.myId+'/tasks/'+spotId] = true;
+    updates['players/'+S.myId+'/tasksDone'] = (me.tasksDone||0) + 1;
+    const imp = S.roomData.impostorMap || {};
+    let done=0, total=0;
+    for(const id in players){
+      if(imp[id]) continue;
+      const t = players[id].tasks || {}; const ks = Object.keys(t);
+      total += ks.length; done += ks.filter(k=>t[k]).length;
+    }
+    if(total>0 && done>=total){ updates['status']='ended'; updates['winner']='crew'; }
+    try{ await roomRef('').update(updates); }catch(e){}
+  }
+
+  // ---- draw helpers: task spots + kill effects ----
+  function drawTaskSpot(x, y, mine, done, t){
+    mctx.save();
+    mctx.translate(x, y);
+    const pulse = 0.5 + 0.5*Math.sin(t*0.005);
+    if(done){
+      mctx.fillStyle = 'rgba(72,230,160,0.9)';
+      mctx.beginPath(); mctx.arc(0,0,13,0,Math.PI*2); mctx.fill();
+      mctx.fillStyle = '#053322'; mctx.font='bold 15px sans-serif'; mctx.textAlign='center'; mctx.textBaseline='middle';
+      mctx.fillText('✓', 0, 1); mctx.textBaseline='alphabetic';
+    } else if(mine){
+      mctx.strokeStyle = 'rgba(255,206,69,'+(0.5+0.5*pulse)+')';
+      mctx.lineWidth = 3;
+      mctx.beginPath(); mctx.arc(0,0,14+pulse*4,0,Math.PI*2); mctx.stroke();
+      mctx.fillStyle = 'rgba(255,206,69,0.9)';
+      mctx.beginPath(); mctx.arc(0,0,10,0,Math.PI*2); mctx.fill();
+      mctx.fillStyle = '#3a2c02'; mctx.font='bold 14px sans-serif'; mctx.textAlign='center'; mctx.textBaseline='middle';
+      mctx.fillText('!', 0, 1); mctx.textBaseline='alphabetic';
+    } else {
+      mctx.fillStyle = 'rgba(120,131,176,0.4)';
+      mctx.beginPath(); mctx.arc(0,0,8,0,Math.PI*2); mctx.fill();
+    }
+    mctx.restore();
+  }
+
+  function detectDeaths(){
+    if(!S.roomData) return;
+    const players = S.roomData.players || {};
+    S.prevAliveMap = S.prevAliveMap || {};
+    S.deathFx = S.deathFx || [];
+    for(const id in players){
+      const a = players[id].alive;
+      if(S.prevAliveMap[id]===true && a===false){
+        const pos = (id===S.myId) ? S.myPos : S.positions[id];
+        if(pos) S.deathFx.push({ x:pos.x, y:pos.y, t:performance.now(), color: colorHex(players[id].color) });
+      }
+      S.prevAliveMap[id] = a;
+    }
+  }
+
+  function drawKillFx(x, y, k, color){
+    mctx.save();
+    mctx.translate(x, y);
+    const R = PLAYER_R;
+    // expanding red burst
+    mctx.globalAlpha = (1-k)*0.9;
+    mctx.strokeStyle = '#ff5470';
+    mctx.lineWidth = 5*(1-k)+1;
+    mctx.beginPath(); mctx.arc(0,0, 10 + k*46, 0, Math.PI*2); mctx.stroke();
+    // slash marks
+    mctx.strokeStyle = '#ffd0d8';
+    mctx.lineWidth = 4*(1-k)+1;
+    for(const ang of [ -0.5, 0.4 ]){
+      mctx.save(); mctx.rotate(ang);
+      const len = R*1.4*(0.5+k);
+      mctx.beginPath(); mctx.moveTo(-len, 0); mctx.lineTo(len, 0); mctx.stroke();
+      mctx.restore();
+    }
+    mctx.restore();
+  }
+
+  // ============================================================
   // Meeting
   // ============================================================
   async function callMeeting(){
     if(!S.roomData || S.roomData.status!=='playing') return;
-    S.meetingCooldownUntil = Date.now() + MEETING_COOLDOWN_MS;
+    if(Date.now() < (S.roomData.nextMeetingAt || 0)) return; // 공용 쿨타임 중
+    const me = S.roomData.players[S.myId];
+    if(me && !me.alive) return;
     try{
       await roomRef('').update({
         status:'meeting',
@@ -1555,6 +1906,7 @@
     updates['status'] = outcome ? 'ended' : 'playing';
     updates['meeting'] = null;
     updates['lastEjected'] = { id: ejectedId || null, wasImpostor, at: Date.now() };
+    updates['nextMeetingAt'] = Date.now() + MEETING_COOLDOWN_MS; // 회의 후 쿨타임 시작
     if(outcome) updates['winner'] = outcome;
     try{ await roomRef('').update(updates); }catch(e){}
   }
@@ -1690,6 +2042,8 @@
   $('btnStartGame').addEventListener('click', startGame);
   $('btnKill').addEventListener('click', doKill);
   $('btnMeeting').addEventListener('click', callMeeting);
+  $('btnTask').addEventListener('click', openMission);
+  $('btnMissionClose').addEventListener('click', closeMission);
   $('btnCopyInvite').addEventListener('click', copyInviteLink);
   $('btnLeaveLobby').addEventListener('click', leaveRoom);
   $('btnEndLeave').addEventListener('click', leaveRoom);
