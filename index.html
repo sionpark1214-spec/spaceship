@@ -133,8 +133,42 @@
 
   .lobby-footer-note{ font-size:12px; color:var(--text-dim); text-align:center; margin-top:14px; line-height:1.6; }
 
+  /* ---------- Lobby scene ---------- */
+  #screenLobby{ position:fixed; inset:0; z-index:1; }
+  #lobbyCanvas{ position:absolute; inset:0; width:100%; height:100%; display:block; }
+  .lobby-top{
+    position:absolute; top: max(12px, env(safe-area-inset-top)); left:0; right:0;
+    display:flex; gap:10px; align-items:center; justify-content:center; flex-wrap:wrap;
+    z-index:6; padding:0 12px;
+  }
+  .lobby-code-pill{
+    background: rgba(22,27,54,0.9); backdrop-filter: blur(6px);
+    border:1px solid var(--line); border-radius:20px; padding:8px 16px;
+    font-size:14px; color:var(--text-dim);
+  }
+  .lobby-code-pill b{
+    font-family:'Space Mono',monospace; font-size:20px; letter-spacing:0.18em;
+    color:var(--accent); margin-left:6px;
+  }
+  .lobby-mini-btn, .lobby-count{
+    background: rgba(22,27,54,0.9); backdrop-filter: blur(6px);
+    border:1px solid var(--line); border-radius:20px; padding:9px 15px;
+    font-size:13px; color:var(--text); cursor:pointer; font-family:inherit;
+  }
+  .lobby-mini-btn:active{ transform: scale(0.96); }
+  .lobby-count{ cursor:default; color:var(--cyan); font-family:'Space Mono',monospace; }
+  .lobby-invite-note{ position:absolute; top:64px; left:50%; transform:translateX(-50%); z-index:6; max-width:min(92vw,420px); margin:0; }
+  .lobby-bottom{
+    position:absolute; left:0; right:0; bottom: max(12px, env(safe-area-inset-bottom));
+    z-index:6; display:flex; flex-direction:column; align-items:center; gap:8px;
+    background: linear-gradient(0deg, rgba(10,14,30,0.92), rgba(10,14,30,0));
+    padding: 20px 12px 8px;
+  }
+  .lobby-actions{ display:flex; gap:10px; align-items:center; justify-content:center; flex-wrap:wrap; }
+  .lobby-actions .btn{ margin-top:0; }
+
   /* ---------- Color picker ---------- */
-  .picker-label{ font-size:12px; color:var(--text-dim); text-align:center; margin: 14px 0 8px; }
+  .picker-label{ font-size:12px; color:var(--text-dim); text-align:center; margin: 4px 0 6px; }
   .color-picker{ display:flex; flex-wrap:wrap; gap:9px; justify-content:center; margin-bottom: 6px; }
   .swatch{
     width:30px; height:30px; border-radius:50%; padding:0;
@@ -246,7 +280,7 @@
 
   <!-- TITLE SCREEN -->
   <div id="screenTitle" class="panel">
-    <p class="eyebrow">2~8인 · 정체 추리 게임</p>
+    <p class="eyebrow">2~20인 · 정체 추리 게임</p>
     <h1 class="title-logo">🛸 수상한 우주선</h1>
     <p class="subtitle">친구들과 방을 만들어서 같이 놀아봐! 승무원들 사이에 몰래 숨은 정체불명이 있어.</p>
 
@@ -266,27 +300,27 @@
   </div>
 
   <!-- LOBBY SCREEN -->
-  <div id="screenLobby" class="panel hidden">
-    <p class="eyebrow">대기실</p>
-    <div class="room-code-display">
-      <div class="code" id="lobbyCode">----</div>
-      <div class="hint">이 코드를 친구들에게 알려줘!</div>
+  <div id="screenLobby" class="hidden">
+    <canvas id="lobbyCanvas"></canvas>
+
+    <div class="lobby-top">
+      <div class="lobby-code-pill">방 코드 <b id="lobbyCode">----</b></div>
+      <button class="lobby-mini-btn" id="btnCopyInvite">🔗 초대 링크 복사</button>
+      <div id="lobbyCount" class="lobby-count">1 / 20</div>
     </div>
+    <div id="inviteCopiedNote" class="notice-msg hidden lobby-invite-note">링크를 복사했어요! 문자나 카톡에 붙여넣기 해서 보내줘. 친구가 누르면 코드가 자동으로 입력돼.</div>
 
-    <button class="btn btn-ghost btn-small" id="btnCopyInvite" style="width:100%;margin-bottom:16px;">🔗 초대 링크 복사하기</button>
-    <div id="inviteCopiedNote" class="notice-msg hidden" style="margin-top:-10px;margin-bottom:16px;">링크를 복사했어요! 문자나 카톡에 붙여넣기 해서 보내줘. 친구가 누르면 코드가 자동으로 입력돼.</div>
-
-    <div class="player-list" id="lobbyPlayerList"></div>
-
-    <div class="picker-label">🎨 내 색깔 고르기 (✕ 표시는 다른 친구가 쓰는 색이에요)</div>
-    <div class="color-picker" id="colorPicker"></div>
-
-    <div id="lobbyHostControls">
-      <button class="btn btn-primary" id="btnStartGame" disabled>▶ 게임 시작 (최소 3명 필요)</button>
+    <div class="lobby-bottom">
+      <div class="picker-label">🎨 내 색깔 고르기 (✕ 는 다른 친구가 쓰는 색)</div>
+      <div class="color-picker" id="colorPicker"></div>
+      <div class="lobby-actions">
+        <button class="btn btn-ghost btn-small" id="btnLeaveLobby">나가기</button>
+        <div id="lobbyHostControls">
+          <button class="btn btn-primary btn-small" id="btnStartGame" disabled>▶ 게임 시작</button>
+        </div>
+        <div id="lobbyGuestNote" class="lobby-footer-note hidden" style="margin:0;">호스트가 시작하기를 기다리는 중...</div>
+      </div>
     </div>
-    <div id="lobbyGuestNote" class="lobby-footer-note hidden">호스트가 게임을 시작하기를 기다리는 중...</div>
-
-    <button class="btn btn-ghost btn-small" id="btnLeaveLobby" style="margin-top:16px;">나가기</button>
   </div>
 
   <!-- GAME VIEW -->
@@ -619,8 +653,8 @@
         showError('이미 게임이 시작된 방이에요.'); setButtonsBusy(false); return;
       }
       const existingCount = Object.keys(players).length;
-      if(existingCount >= 8 && !players[S.myId]){
-        showError('방이 가득 찼어요 (최대 8명).'); setButtonsBusy(false); return;
+      if(existingCount >= 20 && !players[S.myId]){
+        showError('방이 가득 찼어요 (최대 20명).'); setButtonsBusy(false); return;
       }
       const color = players[S.myId] ? players[S.myId].color : pickColorFor(players);
       S.myName = name; S.myColorId = color; S.roomCode = code; S.isHost = (data.hostId === S.myId);
@@ -679,6 +713,7 @@
     $('lobbyCode').textContent = S.roomCode;
     renderLobby();
     startPresenceLoop();
+    startLobbyScene();
   }
 
   // ============================================================
@@ -687,25 +722,15 @@
   function renderLobby(){
     if(!S.roomData) return;
     const players = S.roomData.players || {};
-    const list = $('lobbyPlayerList');
-    list.innerHTML = '';
-    const ids = Object.keys(players).sort((a,b)=> (players[a].joinedAt||0) - (players[b].joinedAt||0));
-    for(const id of ids){
-      const p = players[id];
-      const chip = document.createElement('div');
-      chip.className = 'player-chip';
-      chip.innerHTML = `<div class="dot" style="background:${colorHex(p.color)}"></div>
-        <div class="pname">${escapeHtml(p.name)}${id===S.myId?' (나)':''}</div>
-        ${id===S.roomData.hostId ? '<div class="ptag">호스트</div>' : ''}`;
-      list.appendChild(chip);
-    }
+    const count = Object.keys(players).length;
+    $('lobbyCode').textContent = S.roomCode;
+    $('lobbyCount').textContent = count + ' / 20';
     renderColorPicker();
-    const count = ids.length;
     $('lobbyHostControls').classList.toggle('hidden', !S.isHost);
     $('lobbyGuestNote').classList.toggle('hidden', S.isHost);
     const startBtn = $('btnStartGame');
     startBtn.disabled = count < 3;
-    startBtn.textContent = count < 3 ? `▶ 게임 시작 (최소 3명 필요, 현재 ${count}명)` : '▶ 게임 시작';
+    startBtn.textContent = count < 3 ? `▶ 게임 시작 (${count}/최소3명)` : '▶ 게임 시작';
   }
 
   function renderColorPicker(){
@@ -748,7 +773,8 @@
     if(!S.isHost || !S.roomData) return;
     const ids = Object.keys(S.roomData.players || {});
     if(ids.length < 3) return;
-    const impostorCount = ids.length >= 7 ? 2 : 1;
+    const n = ids.length;
+    const impostorCount = n >= 14 ? 3 : (n >= 7 ? 2 : 1);
     const shuffled = ids.slice().sort(()=>Math.random()-0.5);
     const impostorMap = {};
     shuffled.slice(0, impostorCount).forEach(id => { impostorMap[id] = true; });
@@ -796,6 +822,7 @@
   // Enter game / role reveal
   // ============================================================
   function enterGame(){
+    stopLobbyScene();
     setView('playing');
     // spawn inside the 식당 (cafeteria)
     S.myPos = { x: 430 + Math.random()*140, y: 95 + Math.random()*110 };
@@ -980,10 +1007,10 @@
       }
       S.peerPrevX[peer.id] = peer.x;
       S.peerWalk[peer.id] = moving ? (S.peerWalk[peer.id]||0) + 0.4 : 0;
-      drawCrewmate(peer.x, peer.y, colorHex(peer.color), peer.name, peer.alive, false, S.peerFacing[peer.id]||1, S.peerWalk[peer.id]||0);
+      drawCrewmate(mctx, peer.x, peer.y, colorHex(peer.color), peer.name, peer.alive, false, S.peerFacing[peer.id]||1, S.peerWalk[peer.id]||0);
     }
     const myAlive = S.roomData && S.roomData.players[S.myId] ? S.roomData.players[S.myId].alive : true;
-    drawCrewmate(S.myPos.x, S.myPos.y, colorHex(S.myColorId), S.myName + ' (나)', myAlive, true, S.myFacing||1, S.myWalk||0);
+    drawCrewmate(mctx, S.myPos.x, S.myPos.y, colorHex(S.myColorId), S.myName + ' (나)', myAlive, true, S.myFacing||1, S.myWalk||0);
 
     mctx.restore();
   }
@@ -1010,138 +1037,304 @@
 
   // Draw an original cute "space jelly" buddy — squishy blob, big eyes,
   // blush cheeks, tiny feet, and a glowing star antenna.
-  function drawCrewmate(x, y, hex, name, alive, isMe, facing, walk){
+  function drawCrewmate(ctx, x, y, hex, name, alive, isMe, facing, walk){
     const R = PLAYER_R;
-    mctx.save();
-    mctx.translate(x, y);
-    if(!alive) mctx.globalAlpha = 0.4;
+    ctx.save();
+    ctx.translate(x, y);
+    if(!alive) ctx.globalAlpha = 0.4;
 
     // squish + bob while walking
     const bob = alive ? Math.abs(Math.sin(walk)) * R*0.10 : 0;
     const squish = alive ? Math.sin(walk*2) * 0.05 : 0;
     const footSwing = alive ? Math.sin(walk) * R*0.14 : 0;
-    mctx.translate(0, -bob);
+    ctx.translate(0, -bob);
 
     const bodyLight = hex;
     const bodyDark = shade(hex, 0.78);
 
     // ---- soft shadow on the floor ----
-    mctx.save();
-    mctx.globalAlpha *= 0.25;
-    mctx.fillStyle = '#000';
-    mctx.beginPath();
-    mctx.ellipse(0, R*1.28 + bob, R*0.85, R*0.28, 0, 0, Math.PI*2);
-    mctx.fill();
-    mctx.restore();
+    ctx.save();
+    ctx.globalAlpha *= 0.25;
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.ellipse(0, R*1.28 + bob, R*0.85, R*0.28, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
 
     // ---- little feet ----
-    mctx.fillStyle = bodyDark;
-    mctx.beginPath(); mctx.ellipse(-R*0.42, R*1.0 - footSwing, R*0.3, R*0.24, 0, 0, Math.PI*2); mctx.fill();
-    mctx.beginPath(); mctx.ellipse( R*0.42, R*1.0 + footSwing, R*0.3, R*0.24, 0, 0, Math.PI*2); mctx.fill();
+    ctx.fillStyle = bodyDark;
+    ctx.beginPath(); ctx.ellipse(-R*0.42, R*1.0 - footSwing, R*0.3, R*0.24, 0, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse( R*0.42, R*1.0 + footSwing, R*0.3, R*0.24, 0, 0, Math.PI*2); ctx.fill();
 
     // ---- antenna with glowing star ----
-    mctx.strokeStyle = bodyDark;
-    mctx.lineWidth = R*0.14;
-    mctx.beginPath();
-    mctx.moveTo(0, -R*0.9);
-    mctx.quadraticCurveTo(R*0.25*facing, -R*1.35, R*0.1*facing, -R*1.6);
-    mctx.stroke();
+    ctx.strokeStyle = bodyDark;
+    ctx.lineWidth = R*0.14;
+    ctx.beginPath();
+    ctx.moveTo(0, -R*0.9);
+    ctx.quadraticCurveTo(R*0.25*facing, -R*1.35, R*0.1*facing, -R*1.6);
+    ctx.stroke();
     const starX = R*0.1*facing, starY = -R*1.72;
-    mctx.save();
-    mctx.shadowColor = '#ffe27a';
-    mctx.shadowBlur = 8;
-    mctx.fillStyle = '#ffe27a';
-    drawStar(starX, starY, 5, R*0.28, R*0.13);
-    mctx.fill();
-    mctx.restore();
+    ctx.save();
+    ctx.shadowColor = '#ffe27a';
+    ctx.shadowBlur = 8;
+    ctx.fillStyle = '#ffe27a';
+    drawStar(ctx, starX, starY, 5, R*0.28, R*0.13);
+    ctx.fill();
+    ctx.restore();
 
     // ---- squishy body (rounder-than-tall blob) ----
     const bw = R*1.02*(1+squish), bh = R*1.06*(1-squish);
-    const grad = mctx.createRadialGradient(-R*0.3, -R*0.4, R*0.2, 0, 0, R*1.3);
+    const grad = ctx.createRadialGradient(-R*0.3, -R*0.4, R*0.2, 0, 0, R*1.3);
     grad.addColorStop(0, shade(hex, 1.12));
     grad.addColorStop(0.6, bodyLight);
     grad.addColorStop(1, bodyDark);
-    mctx.fillStyle = grad;
-    mctx.beginPath();
-    mctx.ellipse(0, 0, bw, bh, 0, 0, Math.PI*2);
-    mctx.fill();
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, bw, bh, 0, 0, Math.PI*2);
+    ctx.fill();
 
     // body outline (cyan ring if it's me)
-    mctx.lineWidth = isMe ? 3 : 1.6;
-    mctx.strokeStyle = isMe ? '#5ce1ff' : 'rgba(0,0,0,0.28)';
-    mctx.beginPath();
-    mctx.ellipse(0, 0, bw, bh, 0, 0, Math.PI*2);
-    mctx.stroke();
+    ctx.lineWidth = isMe ? 3 : 1.6;
+    ctx.strokeStyle = isMe ? '#5ce1ff' : 'rgba(0,0,0,0.28)';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, bw, bh, 0, 0, Math.PI*2);
+    ctx.stroke();
 
     // glossy highlight on top
-    mctx.fillStyle = 'rgba(255,255,255,0.35)';
-    mctx.beginPath();
-    mctx.ellipse(-R*0.32, -R*0.45, R*0.34, R*0.2, -0.5, 0, Math.PI*2);
-    mctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.beginPath();
+    ctx.ellipse(-R*0.32, -R*0.45, R*0.34, R*0.2, -0.5, 0, Math.PI*2);
+    ctx.fill();
 
     if(alive){
       // ---- face (shifts toward facing direction) ----
       const fx = facing * R*0.14;
-      // eyes
       const eyeY = -R*0.05, eyeDX = R*0.34, eyeRX = R*0.2, eyeRY = R*0.26;
       for(const s of [-1, 1]){
-        mctx.fillStyle = '#ffffff';
-        mctx.beginPath(); mctx.ellipse(fx + s*eyeDX, eyeY, eyeRX, eyeRY, 0, 0, Math.PI*2); mctx.fill();
-        // pupil
-        mctx.fillStyle = '#22243a';
-        mctx.beginPath(); mctx.ellipse(fx + s*eyeDX + facing*R*0.05, eyeY + R*0.05, R*0.1, R*0.13, 0, 0, Math.PI*2); mctx.fill();
-        // sparkle
-        mctx.fillStyle = '#ffffff';
-        mctx.beginPath(); mctx.ellipse(fx + s*eyeDX + facing*R*0.02, eyeY - R*0.03, R*0.04, R*0.05, 0, 0, Math.PI*2); mctx.fill();
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath(); ctx.ellipse(fx + s*eyeDX, eyeY, eyeRX, eyeRY, 0, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = '#22243a';
+        ctx.beginPath(); ctx.ellipse(fx + s*eyeDX + facing*R*0.05, eyeY + R*0.05, R*0.1, R*0.13, 0, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath(); ctx.ellipse(fx + s*eyeDX + facing*R*0.02, eyeY - R*0.03, R*0.04, R*0.05, 0, 0, Math.PI*2); ctx.fill();
       }
-      // blush cheeks
-      mctx.fillStyle = 'rgba(255,120,150,0.45)';
-      mctx.beginPath(); mctx.ellipse(fx - R*0.5, R*0.3, R*0.15, R*0.1, 0, 0, Math.PI*2); mctx.fill();
-      mctx.beginPath(); mctx.ellipse(fx + R*0.5, R*0.3, R*0.15, R*0.1, 0, 0, Math.PI*2); mctx.fill();
-      // smile
-      mctx.strokeStyle = '#22243a';
-      mctx.lineWidth = R*0.09;
-      mctx.lineCap = 'round';
-      mctx.beginPath();
-      mctx.arc(fx, R*0.18, R*0.2, 0.15*Math.PI, 0.85*Math.PI);
-      mctx.stroke();
+      ctx.fillStyle = 'rgba(255,120,150,0.45)';
+      ctx.beginPath(); ctx.ellipse(fx - R*0.5, R*0.3, R*0.15, R*0.1, 0, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(fx + R*0.5, R*0.3, R*0.15, R*0.1, 0, 0, Math.PI*2); ctx.fill();
+      ctx.strokeStyle = '#22243a';
+      ctx.lineWidth = R*0.09;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.arc(fx, R*0.18, R*0.2, 0.15*Math.PI, 0.85*Math.PI);
+      ctx.stroke();
     } else {
-      // dead: x_x eyes
-      mctx.strokeStyle = '#22243a';
-      mctx.lineWidth = R*0.1;
-      mctx.lineCap = 'round';
+      ctx.strokeStyle = '#22243a';
+      ctx.lineWidth = R*0.1;
+      ctx.lineCap = 'round';
       for(const s of [-1,1]){
         const ex = s*R*0.34, ey = -R*0.02, d = R*0.13;
-        mctx.beginPath(); mctx.moveTo(ex-d,ey-d); mctx.lineTo(ex+d,ey+d); mctx.stroke();
-        mctx.beginPath(); mctx.moveTo(ex+d,ey-d); mctx.lineTo(ex-d,ey+d); mctx.stroke();
+        ctx.beginPath(); ctx.moveTo(ex-d,ey-d); ctx.lineTo(ex+d,ey+d); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(ex+d,ey-d); ctx.lineTo(ex-d,ey+d); ctx.stroke();
       }
     }
 
     // ---- name tag ----
-    mctx.globalAlpha = 1;
-    mctx.font = '700 12.5px "Noto Sans KR", sans-serif';
-    mctx.textAlign = 'center';
-    const tw = mctx.measureText(name).width;
-    mctx.fillStyle = 'rgba(10,14,30,0.55)';
-    roundRect(mctx, -tw/2 - 6, -R*2.35, tw + 12, 18, 8); mctx.fill();
-    mctx.fillStyle = isMe ? '#5ce1ff' : '#eef0fb';
-    mctx.fillText(name, 0, -R*2.05 + 4);
+    ctx.globalAlpha = 1;
+    ctx.font = '700 12.5px "Noto Sans KR", sans-serif';
+    ctx.textAlign = 'center';
+    const tw = ctx.measureText(name).width;
+    ctx.fillStyle = 'rgba(10,14,30,0.55)';
+    roundRect(ctx, -tw/2 - 6, -R*2.35, tw + 12, 18, 8); ctx.fill();
+    ctx.fillStyle = isMe ? '#5ce1ff' : '#eef0fb';
+    ctx.fillText(name, 0, -R*2.05 + 4);
 
-    mctx.restore();
+    ctx.restore();
   }
 
-  function drawStar(cx, cy, spikes, outer, inner){
+  function drawStar(ctx, cx, cy, spikes, outer, inner){
     let rot = -Math.PI/2;
     const step = Math.PI/spikes;
-    mctx.beginPath();
-    mctx.moveTo(cx + Math.cos(rot)*outer, cy + Math.sin(rot)*outer);
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(rot)*outer, cy + Math.sin(rot)*outer);
     for(let i=0;i<spikes;i++){
       rot += step;
-      mctx.lineTo(cx + Math.cos(rot)*inner, cy + Math.sin(rot)*inner);
+      ctx.lineTo(cx + Math.cos(rot)*inner, cy + Math.sin(rot)*inner);
       rot += step;
-      mctx.lineTo(cx + Math.cos(rot)*outer, cy + Math.sin(rot)*outer);
+      ctx.lineTo(cx + Math.cos(rot)*outer, cy + Math.sin(rot)*outer);
     }
-    mctx.closePath();
+    ctx.closePath();
+  }
+
+  // ============================================================
+  // Lobby scene: teleporter in the center, players sit on chairs
+  // ============================================================
+  const LOBBY_W = 1000, LOBBY_H = 620;
+  const TELE = { x: 500, y: 300 };
+  const LOBBY_SEATS = (function(){
+    const seats = [];
+    const rings = [ {n:6, rx:200, ry:120}, {n:14, rx:410, ry:245} ];
+    for(const ring of rings){
+      const off = ring.rx > 300 ? Math.PI/ring.n : 0;
+      for(let i=0;i<ring.n;i++){
+        const a = -Math.PI/2 + off + i*(2*Math.PI/ring.n);
+        seats.push({ x: TELE.x + Math.cos(a)*ring.rx, y: TELE.y + Math.sin(a)*ring.ry });
+      }
+    }
+    return seats; // 20 seats
+  })();
+
+  const lobbyCanvas = $('lobbyCanvas');
+  const lctx = lobbyCanvas.getContext('2d');
+  let lobbyRAF = null;
+
+  function resizeLobbyCanvas(){
+    lobbyCanvas.width = lobbyCanvas.clientWidth * devicePixelRatio;
+    lobbyCanvas.height = lobbyCanvas.clientHeight * devicePixelRatio;
+  }
+  window.addEventListener('resize', ()=>{ if(S.view==='lobby') resizeLobbyCanvas(); });
+
+  function startLobbyScene(){
+    resizeLobbyCanvas();
+    S.lobbyKnown = {};
+    S.lobbyJoinAnim = {};
+    S.lobbyFlashes = [];
+    if(lobbyRAF) cancelAnimationFrame(lobbyRAF);
+    const loop = (ts)=>{ if(S.view!=='lobby'){ lobbyRAF=null; return; } drawLobby(ts); lobbyRAF = requestAnimationFrame(loop); };
+    lobbyRAF = requestAnimationFrame(loop);
+  }
+  function stopLobbyScene(){ if(lobbyRAF){ cancelAnimationFrame(lobbyRAF); lobbyRAF = null; } }
+
+  function drawLobby(ts){
+    const w = lobbyCanvas.width, h = lobbyCanvas.height;
+    const scale = Math.min(w/LOBBY_W, h/LOBBY_H);
+    const offX = (w - LOBBY_W*scale)/2, offY = (h - LOBBY_H*scale)/2;
+    lctx.clearRect(0,0,w,h);
+    lctx.save();
+    lctx.translate(offX, offY);
+    lctx.scale(scale, scale);
+
+    // deck platform
+    lctx.fillStyle = 'rgba(23,30,70,0.85)';
+    roundRect(lctx, 40, 60, LOBBY_W-80, LOBBY_H-120, 40); lctx.fill();
+    lctx.strokeStyle = 'rgba(92,225,255,0.18)';
+    lctx.lineWidth = 3;
+    roundRect(lctx, 40, 60, LOBBY_W-80, LOBBY_H-120, 40); lctx.stroke();
+    // deck title
+    lctx.fillStyle = 'rgba(136,145,194,0.6)';
+    lctx.font = '700 20px "Jua","Noto Sans KR",sans-serif';
+    lctx.textAlign = 'center';
+    lctx.fillText('🛸 대기실 · 친구들을 기다리는 중', LOBBY_W/2, 100);
+
+    // empty chairs
+    const players = (S.roomData && S.roomData.players) || {};
+    const ids = Object.keys(players).sort((a,b)=> (players[a].joinedAt||0) - (players[b].joinedAt||0));
+    for(let i=0;i<LOBBY_SEATS.length;i++){ drawChair(LOBBY_SEATS[i].x, LOBBY_SEATS[i].y, i < ids.length); }
+
+    // teleporter (drawn after chairs so beam sits above)
+    drawTeleporter(ts);
+
+    // detect new joins → animate from teleporter
+    const now = performance.now();
+    for(const id of ids){
+      if(!S.lobbyKnown[id]){ S.lobbyKnown[id]=true; S.lobbyJoinAnim[id]=now; S.lobbyFlashes.push({t:now}); }
+    }
+
+    // seated players (depth-sorted by y)
+    const items = [];
+    for(let i=0;i<ids.length;i++){
+      const id = ids[i];
+      const seat = LOBBY_SEATS[i % LOBBY_SEATS.length];
+      const p = players[id];
+      let px = seat.x, py = seat.y - PLAYER_R*0.4, sc = 1, alpha = 1;
+      const st = S.lobbyJoinAnim[id];
+      if(st !== undefined){
+        const e = (now - st) / 900;
+        if(e < 1){
+          const k = 1 - Math.pow(1 - Math.max(0,e), 3);
+          px = TELE.x + (seat.x - TELE.x)*k;
+          py = (TELE.y - 12) + ((seat.y - PLAYER_R*0.4) - (TELE.y - 12))*k;
+          sc = 0.3 + 0.7*k;
+          alpha = Math.min(1, e*2.2);
+        } else { delete S.lobbyJoinAnim[id]; }
+      }
+      items.push({id, p, seat, px, py, sc, alpha});
+    }
+    items.sort((a,b)=> a.py - b.py);
+    for(const it of items){
+      lctx.save();
+      lctx.globalAlpha = it.alpha;
+      lctx.translate(it.px, it.py);
+      lctx.scale(it.sc, it.sc);
+      const facing = it.seat.x < TELE.x ? 1 : -1;
+      drawCrewmate(lctx, 0, 0, colorHex(it.p.color), it.p.name + (it.id===S.myId?' (나)':''), true, it.id===S.myId, facing, 0);
+      lctx.restore();
+    }
+
+    // teleport flashes
+    S.lobbyFlashes = (S.lobbyFlashes||[]).filter(f => now - f.t < 600);
+    for(const f of S.lobbyFlashes){ drawTeleFlash(TELE.x, TELE.y, (now - f.t)/600); }
+
+    lctx.restore();
+  }
+
+  function drawChair(x, y, occupied){
+    lctx.save();
+    lctx.translate(x, y);
+    // seat cushion
+    lctx.fillStyle = occupied ? 'rgba(58,66,126,0.95)' : 'rgba(45,52,95,0.7)';
+    roundRect(lctx, -20, 6, 40, 16, 7); lctx.fill();
+    // seat back
+    lctx.fillStyle = occupied ? 'rgba(74,85,160,0.9)' : 'rgba(52,60,110,0.6)';
+    roundRect(lctx, -18, -14, 36, 22, 8); lctx.fill();
+    lctx.restore();
+  }
+
+  function drawTeleporter(ts){
+    const cx = TELE.x, cy = TELE.y;
+    const pulse = 0.5 + 0.5*Math.sin(ts*0.004);
+    // base pad
+    lctx.save();
+    lctx.fillStyle = 'rgba(20,26,60,0.9)';
+    lctx.beginPath(); lctx.ellipse(cx, cy+40, 74, 26, 0, 0, Math.PI*2); lctx.fill();
+    // glowing ring
+    lctx.strokeStyle = 'rgba(92,225,255,'+(0.5+0.4*pulse)+')';
+    lctx.lineWidth = 5;
+    lctx.beginPath(); lctx.ellipse(cx, cy+40, 62, 20, 0, 0, Math.PI*2); lctx.stroke();
+    // light beam
+    const beam = lctx.createLinearGradient(0, cy-120, 0, cy+40);
+    beam.addColorStop(0, 'rgba(92,225,255,0)');
+    beam.addColorStop(1, 'rgba(92,225,255,'+(0.16+0.12*pulse)+')');
+    lctx.fillStyle = beam;
+    lctx.beginPath();
+    lctx.moveTo(cx-44, cy+40); lctx.lineTo(cx-26, cy-120); lctx.lineTo(cx+26, cy-120); lctx.lineTo(cx+44, cy+40);
+    lctx.closePath(); lctx.fill();
+    // floating sparkles
+    for(let i=0;i<4;i++){
+      const t = (ts*0.001 + i*0.7) % 1;
+      const sy = cy+30 - t*130;
+      lctx.globalAlpha = (1-t)*0.8;
+      lctx.fillStyle = '#bfefff';
+      lctx.beginPath(); lctx.arc(cx + Math.sin(t*6+i)*18, sy, 2.5, 0, Math.PI*2); lctx.fill();
+    }
+    lctx.globalAlpha = 1;
+    // machine posts
+    lctx.fillStyle = '#4a55a0';
+    roundRect(lctx, cx-58, cy+8, 10, 44, 4); lctx.fill();
+    roundRect(lctx, cx+48, cy+8, 10, 44, 4); lctx.fill();
+    lctx.fillStyle = '#ffe27a';
+    lctx.beginPath(); lctx.arc(cx-53, cy+16, 3, 0, Math.PI*2); lctx.fill();
+    lctx.beginPath(); lctx.arc(cx+53, cy+16, 3, 0, Math.PI*2); lctx.fill();
+    lctx.restore();
+  }
+
+  function drawTeleFlash(cx, cy, t){
+    lctx.save();
+    lctx.globalAlpha = (1-t)*0.9;
+    lctx.strokeStyle = '#bfefff';
+    lctx.lineWidth = 4*(1-t)+1;
+    const r = 20 + t*70;
+    lctx.beginPath(); lctx.ellipse(cx, cy-6, r, r*0.5, 0, 0, Math.PI*2); lctx.stroke();
+    lctx.restore();
   }
 
   // ============================================================
@@ -1430,6 +1623,7 @@
   function backToLobbyView(){
     setView('lobby');
     renderLobby();
+    startLobbyScene();
   }
 
   // ============================================================
@@ -1480,6 +1674,7 @@
     if(S.unsubPos) S.unsubPos();
     if(presenceInterval) clearInterval(presenceInterval);
     if(meetingTickHandle) clearInterval(meetingTickHandle);
+    stopLobbyScene();
     S.roomCode = null; S.roomData = null; S.isHost = false; S.lastRoleRound = -1;
     S.lastShownResultKey = null; S.positions = {};
     setView('title');
