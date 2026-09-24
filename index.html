@@ -531,7 +531,6 @@
     {id:'black',   hex:'#3a4066', name:'검정'}
   ];
   const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  const MAP_W = 1360, MAP_H = 860;
   const PLAYER_R = 17;
   const MOVE_SPEED = 300; // px/sec
   const KILL_RANGE = 64;
@@ -539,26 +538,38 @@
   const MEETING_COOLDOWN_MS = 18000; // 회의 끝난 뒤 다음 회의까지 쿨타임
   const MEETING_DURATION_MS = 25000;
   const TASK_RANGE = 60;
-  const TASKS_PER_PLAYER = 4;
+  const TASKS_PER_PLAYER = 5;
+  const VIEW_UNITS = 1050;   // 화면에 한 번에 보이는 월드 폭(대략) — 카메라 확대
+  const LOOK_AHEAD = 260;    // 움직이는 쪽을 더 보여주는 거리
 
-  // Rooms (walls around them) + corridors that connect them (open doorways)
-  const ROOMS = [
-    {name:'식당',   x:560, y:340, w:300, h:200},  // 가운데 허브
-    {name:'무기고', x:100, y:90,  w:280, h:180},
-    {name:'통신실', x:600, y:80,  w:260, h:160},
-    {name:'항법실', x:1000,y:90,  w:280, h:180},
-    {name:'전기실', x:100, y:610, w:280, h:180},
-    {name:'의무실', x:600, y:630, w:260, h:160},
-    {name:'원자로', x:1000,y:610, w:280, h:180}
+  // 15개 방을 5x4... 아니라 5열 x 3행 격자로 배치, 복도로 연결
+  const GRID = { cols:5, rows:3, x0:120, y0:120, rw:340, rh:240, cx:540, cy:460 };
+  const ROOM_NAMES = [
+    '무기고','통신실','함교','항법실','산소실',
+    '전기실','창고','식당','실험실','관리실',
+    '엔진실','보안실','원자로','의무실','정원'
   ];
-  const CORRIDORS = [
-    {x:100, y:400, w:1180, h:80},  // 가로 큰 복도
-    {x:690, y:90,  w:80,  h:700},  // 세로 큰 복도
-    {x:210, y:250, w:70,  h:160},  // 무기고 → 가로복도
-    {x:1090,y:250, w:70,  h:160},  // 항법실 → 가로복도
-    {x:210, y:470, w:70,  h:150},  // 전기실 → 가로복도
-    {x:1090,y:470, w:70,  h:150}   // 원자로 → 가로복도
-  ];
+  const HUB_INDEX = 7; // 식당 (가운데)
+  const ROOMS = [];
+  for(let r=0;r<GRID.rows;r++) for(let c=0;c<GRID.cols;c++){
+    ROOMS.push({
+      name: ROOM_NAMES[r*GRID.cols+c],
+      x: GRID.x0 + c*GRID.cx, y: GRID.y0 + r*GRID.cy, w: GRID.rw, h: GRID.rh
+    });
+  }
+  const MAP_W = GRID.x0*2 + (GRID.cols-1)*GRID.cx + GRID.rw;
+  const MAP_H = GRID.y0*2 + (GRID.rows-1)*GRID.cy + GRID.rh;
+  const CORRIDORS = [];
+  for(let r=0;r<GRID.rows;r++) for(let c=0;c<GRID.cols-1;c++){ // 가로 복도
+    const xL = GRID.x0 + c*GRID.cx + GRID.rw - 10;
+    const xR = GRID.x0 + (c+1)*GRID.cx + 10;
+    CORRIDORS.push({ x: xL, y: GRID.y0 + r*GRID.cy + GRID.rh/2 - 45, w: xR - xL, h: 90 });
+  }
+  for(let c=0;c<GRID.cols;c++) for(let r=0;r<GRID.rows-1;r++){ // 세로 복도
+    const yT = GRID.y0 + r*GRID.cy + GRID.rh - 10;
+    const yB = GRID.y0 + (r+1)*GRID.cy + 10;
+    CORRIDORS.push({ x: GRID.x0 + c*GRID.cx + GRID.rw/2 - 45, y: yT, w: 90, h: yB - yT });
+  }
   const WALKABLE = ROOMS.concat(CORRIDORS);
   function walkableAt(x, y){
     for(const r of WALKABLE){
@@ -568,15 +579,10 @@
   }
 
   // Task spots — one per room (crew walk here and complete a mini-game)
-  const TASK_SPOTS = [
-    {id:'t_weapon', room:'무기고', name:'무기 정렬',   x:240, y:180},
-    {id:'t_comms',  room:'통신실', name:'통신 연결',   x:730, y:160},
-    {id:'t_nav',    room:'항법실', name:'항로 입력',   x:1140,y:180},
-    {id:'t_elec',   room:'전기실', name:'전선 연결',   x:240, y:700},
-    {id:'t_med',    room:'의무실', name:'검체 스캔',   x:730, y:710},
-    {id:'t_reactor',room:'원자로', name:'원자로 안정', x:1140,y:700},
-    {id:'t_cafe',   room:'식당',   name:'쓰레기 비우기',x:710, y:440}
-  ];
+  const TASK_SPOTS = ROOMS.map((rm, i) => ({
+    id: 't'+i, room: rm.name, name: rm.name+' 미션',
+    x: rm.x + rm.w/2, y: rm.y + rm.h/2
+  }));
 
   function randCode(){
     let s = '';
@@ -847,7 +853,12 @@
     if(ids.length < 1) return;
     const n = ids.length;
     const impostorCount = n >= 14 ? 3 : (n >= 7 ? 2 : 1);
-    const shuffled = ids.slice().sort(()=>Math.random()-0.5);
+    // 제대로 된 무작위 셔플 (Fisher-Yates) — 아무나 정체불명이 될 수 있음
+    const shuffled = ids.slice();
+    for(let i = shuffled.length - 1; i > 0; i--){
+      const j = Math.floor(Math.random() * (i + 1));
+      const tmp = shuffled[i]; shuffled[i] = shuffled[j]; shuffled[j] = tmp;
+    }
     const impostorMap = {};
     shuffled.slice(0, impostorCount).forEach(id => { impostorMap[id] = true; });
 
@@ -922,7 +933,11 @@
     stopLobbyScene();
     setView('playing');
     // spawn inside the 식당 (cafeteria hub)
-    S.myPos = { x: 620 + Math.random()*180, y: 380 + Math.random()*120 };
+    const hub = ROOMS[HUB_INDEX];
+    S.myPos = { x: hub.x + 60 + Math.random()*(hub.w-120), y: hub.y + 60 + Math.random()*(hub.h-120) };
+    S.cam = { x: S.myPos.x, y: S.myPos.y };
+    S.lookahead = { x: 0, y: 0 };
+    S.moving = false; S.lastMoveDir = { x: 0, y: 0 };
     S.missionOpen = false;
     S.deathFx = [];
     showRoleBanner();
@@ -1019,6 +1034,7 @@
 
     if(S.view === 'playing'){
       const alive = S.roomData && S.roomData.players[S.myId] ? S.roomData.players[S.myId].alive : true;
+      S.moving = false;
       if(alive && !S.missionOpen){
         let dx=0, dy=0;
         if(S.keys.up) dy -= 1;
@@ -1035,6 +1051,8 @@
           if(walkableAt(S.myPos.x, ny)) S.myPos.y = ny;
           if(dx > 0) S.myFacing = 1; else if(dx < 0) S.myFacing = -1;
           S.myWalk = (S.myWalk || 0) + dt * 10;
+          S.moving = true;
+          S.lastMoveDir = { x: dx/len, y: dy/len };
         }
       }
     }
@@ -1044,19 +1062,37 @@
     requestAnimationFrame(gameLoop);
   }
 
+  function updateCamera(visW, visH){
+    S.cam = S.cam || { x: S.myPos.x, y: S.myPos.y };
+    S.lookahead = S.lookahead || { x: 0, y: 0 };
+    const laX = (S.moving && S.lastMoveDir ? S.lastMoveDir.x : 0) * LOOK_AHEAD;
+    const laY = (S.moving && S.lastMoveDir ? S.lastMoveDir.y : 0) * LOOK_AHEAD;
+    S.lookahead.x += (laX - S.lookahead.x) * 0.06;
+    S.lookahead.y += (laY - S.lookahead.y) * 0.06;
+    const tx = S.myPos.x + S.lookahead.x;
+    const ty = S.myPos.y + S.lookahead.y;
+    S.cam.x += (tx - S.cam.x) * 0.12;
+    S.cam.y += (ty - S.cam.y) * 0.12;
+    S.cam.x = MAP_W > visW ? clamp(S.cam.x, visW/2, MAP_W - visW/2) : MAP_W/2;
+    S.cam.y = MAP_H > visH ? clamp(S.cam.y, visH/2, MAP_H - visH/2) : MAP_H/2;
+  }
+
   function drawMap(){
     const w = mapCanvas.width, h = mapCanvas.height;
-    const scale = Math.min(w/MAP_W, h/MAP_H);
-    const offX = (w - MAP_W*scale)/2;
-    const offY = (h - MAP_H*scale)/2;
-
     mctx.save();
-    mctx.fillStyle = '#0d1230';
+    // space background over the whole canvas
+    mctx.fillStyle = '#070a16';
     mctx.fillRect(0,0,w,h);
-    mctx.translate(offX, offY);
-    mctx.scale(scale, scale);
 
-    // outer space (outside the hull)
+    // camera: zoom in and follow the player (looking ahead in movement dir)
+    const scale = Math.max(w, h) / VIEW_UNITS;
+    const visW = w/scale, visH = h/scale;
+    updateCamera(visW, visH);
+    mctx.translate(w/2, h/2);
+    mctx.scale(scale, scale);
+    mctx.translate(-S.cam.x, -S.cam.y);
+
+    // hull floor base (inside map bounds)
     mctx.fillStyle = '#070a16';
     mctx.fillRect(0,0,MAP_W,MAP_H);
 
