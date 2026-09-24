@@ -1428,7 +1428,16 @@
       drawCrewmate(mctx, peer.x, peer.y, colorHex(peer.color), peer.name, peer.alive, false, S.peerFacing[peer.id]||1, S.peerWalk[peer.id]||0);
     }
     const myAlive = S.roomData && S.roomData.players[S.myId] ? S.roomData.players[S.myId].alive : true;
-    drawCrewmate(mctx, S.myPos.x, S.myPos.y, colorHex(S.myColorId), S.myName + ' (나)', myAlive, true, S.myFacing||1, S.myWalk||0);
+    const vfx = S.ventFx;
+    const vfxE = vfx ? (performance.now() - vfx.t) : 999999;
+    if(vfx && vfxE < 400){
+      // 벤트 점프 애니메이션 (들어가기/나오기)
+      const p = vfxE/400;
+      const k = vfx.dir==='in' ? (1-p) : p;   // 1=완전히 밖, 0=벤트 안
+      drawVentHop(vfx.x, vfx.y, colorHex(S.myColorId), k);
+    } else {
+      drawCrewmate(mctx, S.myPos.x, S.myPos.y, colorHex(S.myColorId), S.myName + ' (나)', myAlive, true, S.myFacing||1, S.myWalk||0);
+    }
 
     // kill effects (flashy bursts over recent deaths)
     const nowFx = performance.now();
@@ -1951,13 +1960,9 @@
     const targetId = $('btnKill').dataset.targetId;
     if(!targetId || !S.roomData) return;
     S.killCooldownUntil = Date.now() + KILL_COOLDOWN_MS;
-    // kill motion: lunge toward target + slash effect
+    // 어몽어스식: 피해자에게 순간이동(붙기) + 그 자리에서 칼질
     const tpos = S.positions[targetId];
-    if(tpos){
-      S.slashFx = S.slashFx || [];
-      S.slashFx.push({ x: tpos.x, y: tpos.y, t: performance.now() });
-      S.killLunge = { x: tpos.x, y: tpos.y, until: performance.now()+260 };
-    }
+    if(tpos){ S.myPos = { x: tpos.x, y: tpos.y }; }
     const players = {};
     for(const id in S.roomData.players){ players[id] = { ...S.roomData.players[id] }; }
     if(players[targetId]) players[targetId].alive = false;
@@ -2324,6 +2329,27 @@
     mctx.restore();
   }
 
+  // 벤트 점프 애니메이션 (k: 1=완전히 밖, 0=벤트 안)
+  function drawVentHop(x, y, hex, k){
+    const R = PLAYER_R;
+    // 그레이트에서 나오는 빛 반짝임
+    mctx.save();
+    mctx.translate(x, y);
+    mctx.globalAlpha = (1-k)*0.55;
+    mctx.strokeStyle = '#5ce1ff'; mctx.lineWidth = 3;
+    mctx.beginPath(); mctx.ellipse(0, R*0.4, R*(0.7 + (1-k)*0.7), R*0.4, 0, 0, Math.PI*2); mctx.stroke();
+    mctx.globalAlpha = 1;
+    mctx.restore();
+    // 점프하는 크루메이트 (올라갔다 내려오며 크기 변화)
+    const yOff = -Math.sin((1-k)*Math.PI) * R * 1.1;
+    const s = 0.18 + 0.82*k;
+    mctx.save();
+    mctx.translate(x, y + yOff);
+    mctx.scale(s, s);
+    drawCrewmate(mctx, 0, 0, hex, S.myName + ' (나)', true, true, S.myFacing||1, 0);
+    mctx.restore();
+  }
+
   // ---- draw helpers: task spots + kill effects ----
   function drawTaskSpot(x, y, mine, done, t){
     mctx.save();
@@ -2432,8 +2458,10 @@
     const v = VENTS.find(x=>x.id===vid); if(!v) return;
     S.vented = true;
     S.myPos = { x: v.x, y: v.y };
-    renderVentList();
-    $('overlayVent').classList.remove('hidden');
+    // 점프해서 들어가는 애니메이션 → 끝나면 목적지 목록 열기
+    S.ventFx = { x: v.x, y: v.y, t: performance.now(), dir: 'in' };
+    clearTimeout(enterVent._t);
+    enterVent._t = setTimeout(()=>{ if(S.vented){ renderVentList(); $('overlayVent').classList.remove('hidden'); } }, 400);
   }
   function renderVentList(){
     const list = $('ventList'); list.innerHTML = '';
@@ -2454,8 +2482,10 @@
     renderVentList(); // 새 위치 기준으로 목록 갱신
   }
   function exitVent(){
-    S.vented = false;
     $('overlayVent').classList.add('hidden');
+    // 현재 벤트에서 폴짝 튀어나오는 애니메이션
+    S.ventFx = { x: S.myPos.x, y: S.myPos.y, t: performance.now(), dir: 'out' };
+    S.vented = false;
   }
 
   // ============================================================
