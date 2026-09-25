@@ -456,6 +456,13 @@
           </ul>
         </div>
         <div class="rule-sec">
+          <h3>🎭 특수 역할 (승무원)</h3>
+          <ul>
+            <li>🔍 <b style="color:#5ce1ff">탐정</b> — 시체를 신고하면 회의에서 <b>범인의 색 단서</b>가 공개돼!</li>
+            <li>📢 <b style="color:#ff9a4d">노이즈메이커</b> — 죽으면 <b>죽은 위치</b>가 모두의 화면에 표시돼</li>
+          </ul>
+        </div>
+        <div class="rule-sec">
           <h3>👻 유령</h3>
           <ul>
             <li>죽으면 <b>유령</b>이 돼서 벽을 통과해 자유롭게 떠다녀</li>
@@ -1167,9 +1174,18 @@
     const impostorMap = {};
     picked.slice(0, impostorCount).forEach(id => { impostorMap[id] = true; });
 
+    // 승무원 특수 역할 배정 (탐정 1, 노이즈메이커 1)
+    const crewIds = ids.filter(id => !impostorMap[id]);
+    for(let i=crewIds.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); const t=crewIds[i]; crewIds[i]=crewIds[j]; crewIds[j]=t; }
+    const roleMap = {};
+    if(crewIds.length >= 2) roleMap[crewIds[0]] = 'detective';
+    if(crewIds.length >= 3) roleMap[crewIds[1]] = 'noisemaker';
+
     const updates = {};
     updates['status'] = 'playing';
     updates['impostorMap'] = impostorMap;
+    updates['roleMap'] = roleMap;
+    updates['noiseAlert'] = null;
     updates['meeting'] = null;
     updates['lastEjected'] = null;
     updates['winner'] = null;
@@ -1181,6 +1197,7 @@
       updates['players/'+id+'/bodyX'] = null;
       updates['players/'+id+'/bodyY'] = null;
       updates['players/'+id+'/reported'] = null;
+      updates['players/'+id+'/killerColor'] = null;
       // assign each player a random set of task spots
       const spots = TASK_SPOTS.map(t=>t.id).sort(()=>Math.random()-0.5).slice(0, TASKS_PER_PLAYER);
       const taskMap = {};
@@ -1266,9 +1283,22 @@
     S.lastRevealRound = S.roomData.round;
     const role = myRole();
     const big = $('roleBig'), desc = $('roleDesc'), mates = $('roleMates');
-    big.className = 'role-big ' + (role==='impostor' ? 'imp' : 'crew');
-    big.textContent = role==='impostor' ? '😈 정체불명' : '🧑‍🚀 승무원';
-    desc.textContent = role==='impostor' ? '몰래 승무원을 제거하고 정체를 숨기세요!' : '미션을 완료하고 정체불명을 찾아내세요!';
+    const crewRole = (S.roomData.roleMap && S.roomData.roleMap[S.myId]) || null;
+    big.className = 'role-big';
+    big.style.color = '';
+    if(role==='impostor'){
+      big.classList.add('imp'); big.textContent = '😈 정체불명';
+      desc.textContent = '몰래 승무원을 제거하고 정체를 숨기세요!';
+    } else if(crewRole==='detective'){
+      big.textContent = '🔍 탐정'; big.style.color = '#5ce1ff';
+      desc.textContent = '승무원 편! 시체를 신고하면 범인의 색 단서를 얻어요.';
+    } else if(crewRole==='noisemaker'){
+      big.textContent = '📢 노이즈메이커'; big.style.color = '#ff9a4d';
+      desc.textContent = '승무원 편! 당신이 죽으면 죽은 위치가 모두에게 알려져요.';
+    } else {
+      big.classList.add('crew'); big.textContent = '🧑‍🚀 승무원';
+      desc.textContent = '미션을 완료하고 정체불명을 찾아내세요!';
+    }
     const imp = S.roomData.impostorMap || {};
     const mateNames = Object.keys(imp).filter(id => id!==S.myId && S.roomData.players[id]).map(id => S.roomData.players[id].name);
     mates.textContent = (role==='impostor' && mateNames.length) ? ('동료 정체불명: ' + mateNames.join(', ')) : '';
@@ -1542,6 +1572,21 @@
     const nowFx = performance.now();
     S.deathFx = (S.deathFx||[]).filter(f => nowFx - f.t < KILLFX_DUR);
     for(const f of S.deathFx){ drawKillFx(f, nowFx); }
+
+    // 노이즈메이커 사망 알림 (죽은 위치 핑, 6초간)
+    const na = S.roomData && S.roomData.noiseAlert;
+    if(na && Date.now() - na.at < 6000){
+      const k = ((Date.now()-na.at)%1000)/1000;
+      mctx.save();
+      mctx.strokeStyle = '#ff9a4d'; mctx.lineWidth = 4;
+      mctx.globalAlpha = 1 - k;
+      mctx.beginPath(); mctx.arc(na.x, na.y, 20 + k*60, 0, Math.PI*2); mctx.stroke();
+      mctx.globalAlpha = 0.9;
+      mctx.font = 'bold 40px sans-serif'; mctx.textAlign='center'; mctx.textBaseline='middle';
+      mctx.fillText('📢', na.x, na.y - 40);
+      mctx.textBaseline='alphabetic';
+      mctx.restore();
+    }
 
     mctx.restore();
   }
@@ -2065,9 +2110,14 @@
     if(players[targetId]) players[targetId].alive = false;
     const updates = {};
     updates['players/'+targetId+'/alive'] = false;
-    // 시체는 죽은 자리에 남음 (신고용)
+    // 시체는 죽은 자리에 남음 (신고용) + 범인 색 기록 (탐정용)
     updates['players/'+targetId+'/bodyX'] = Math.round(tpos.x);
     updates['players/'+targetId+'/bodyY'] = Math.round(tpos.y);
+    updates['players/'+targetId+'/killerColor'] = S.myColorId;
+    // 노이즈메이커가 죽으면 위치 알림
+    if(S.roomData.roleMap && S.roomData.roleMap[targetId]==='noisemaker'){
+      updates['noiseAlert'] = { x: Math.round(tpos.x), y: Math.round(tpos.y), at: Date.now() };
+    }
     const outcome = checkWin(players, S.roomData.impostorMap);
     if(outcome){ updates['status'] = 'ended'; updates['winner'] = outcome; }
     try{ await roomRef('').update(updates); }catch(e){}
@@ -2786,10 +2836,17 @@
     const me = S.roomData.players[S.myId];
     if(me && !me.alive) return;
     const bodyId = $('btnReport').dataset.bodyId;
+    // 탐정이 신고하면 범인 색 단서 공개
+    let clue = null;
+    const iAmDetective = S.roomData.roleMap && S.roomData.roleMap[S.myId]==='detective';
+    if(iAmDetective && bodyId && S.roomData.players[bodyId] && S.roomData.players[bodyId].killerColor){
+      const c = COLORS.find(x=>x.id===S.roomData.players[bodyId].killerColor);
+      clue = '🔍 탐정 단서: 범인은 ' + (c?c.name:'?') + ' 색이에요!';
+    }
     try{
       const updates = {
         status:'meeting',
-        meeting: { calledBy: S.myId, startedAt: Date.now(), votes: null, resolvedBy: null, byReport: true }
+        meeting: { calledBy: S.myId, startedAt: Date.now(), votes: null, resolvedBy: null, byReport: true, clue: clue }
       };
       if(bodyId) updates['players/'+bodyId+'/reported'] = true;
       await roomRef('').update(updates);
@@ -2857,10 +2914,15 @@
     }
     const subEl = $('meetingSub');
     if(subEl){
-      subEl.textContent = myAlive
-        ? (S.myVoteTarget ? ('투표 완료! ('+votedCount+'/'+aliveIds.length+'명) · 모두 하면 바로 끝나요')
-                          : ('누구를 의심해? 눌러서 투표! ('+votedCount+'/'+aliveIds.length+'명 완료)'))
-        : ('유령은 관전만 · '+votedCount+'/'+aliveIds.length+'명 투표함');
+      const clue = S.roomData.meeting && S.roomData.meeting.clue;
+      if(clue){ subEl.textContent = clue; subEl.style.color = '#5ce1ff'; }
+      else {
+        subEl.style.color = '';
+        subEl.textContent = myAlive
+          ? (S.myVoteTarget ? ('투표 완료! ('+votedCount+'/'+aliveIds.length+'명) · 모두 하면 바로 끝나요')
+                            : ('누구를 의심해? 눌러서 투표! ('+votedCount+'/'+aliveIds.length+'명 완료)'))
+          : ('유령은 관전만 · '+votedCount+'/'+aliveIds.length+'명 투표함');
+      }
     }
     $('skipCount').textContent = skipCount;
     $('voteSkipRow').className = 'vote-row' + (S.myVoteTarget==='skip'?' voted-mine':'');
@@ -3068,6 +3130,8 @@
     const updates = {};
     updates['status'] = 'lobby';
     updates['impostorMap'] = null;
+    updates['roleMap'] = null;
+    updates['noiseAlert'] = null;
     updates['meeting'] = null;
     updates['lastEjected'] = null;
     updates['winner'] = null;
@@ -3077,6 +3141,7 @@
       updates['players/'+id+'/bodyX'] = null;
       updates['players/'+id+'/bodyY'] = null;
       updates['players/'+id+'/reported'] = null;
+      updates['players/'+id+'/killerColor'] = null;
     }
     await roomRef('').update(updates);
     S.lastShownResultKey = null;
