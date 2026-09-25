@@ -522,7 +522,6 @@
   <div id="gameWrap" class="hidden">
     <canvas id="mapCanvas"></canvas>
 
-    <div class="hud-top-left" id="hudPlayerList"></div>
     <div class="role-banner hidden" id="roleBanner"></div>
 
     <div class="task-bar" id="taskBar">
@@ -1329,20 +1328,7 @@
     banner.textContent = role === 'impostor' ? '😈 정체불명' : '🧑‍🚀 승무원';
   }
 
-  function renderHudPlayerList(){
-    if(!S.roomData) return;
-    const players = S.roomData.players || {};
-    const list = $('hudPlayerList');
-    list.innerHTML = '';
-    const ids = Object.keys(players).sort((a,b)=> (players[a].joinedAt||0) - (players[b].joinedAt||0));
-    for(const id of ids){
-      const p = players[id];
-      const chip = document.createElement('div');
-      chip.className = 'hud-chip' + (p.alive ? '' : ' dead') + (id===S.myId ? ' me' : '');
-      chip.innerHTML = `<div class="dot" style="background:${colorHex(p.color)}"></div><span>${escapeHtml(p.name)}${p.alive?'':' 💀'}</span>`;
-      list.appendChild(chip);
-    }
-  }
+  function renderHudPlayerList(){ /* 좌측 상단 플레이어 목록 제거됨 */ }
 
   // ============================================================
   // Presence (position broadcast) via Firebase
