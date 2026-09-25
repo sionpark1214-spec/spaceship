@@ -278,6 +278,10 @@
 
   .action-btn.cctv{ background: var(--cyan); color:#04262e; }
   .action-btn.vent{ background:#3a4170; color:var(--text); border:1px solid var(--line); }
+  .action-btn.invis{ background:#8aa0c8; color:#0e1330; }
+  .action-btn.shift{ background:#b98bff; color:#20103a; }
+  .shift-dest{ display:flex; align-items:center; gap:10px; background:var(--panel-3); border:1px solid var(--line); border-radius:12px; padding:10px 13px; margin-bottom:8px; cursor:pointer; font-size:15px; }
+  .shift-dest:active{ transform:scale(0.98); }
   .action-btn.report{ background:#ff3355; color:#fff; animation: reportPulse 0.7s ease-in-out infinite; }
   .vent-dest{ display:flex; align-items:center; gap:10px; background:var(--panel-3); border:1px solid var(--line); border-radius:12px; padding:12px 14px; margin-bottom:8px; cursor:pointer; font-size:15px; }
   .vent-dest:active{ transform:scale(0.98); }
@@ -460,6 +464,14 @@
           <ul>
             <li>🔍 <b style="color:#5ce1ff">탐정</b> — 시체를 신고하면 회의에서 <b>범인의 색 단서</b>가 공개돼!</li>
             <li>📢 <b style="color:#ff9a4d">노이즈메이커</b> — 죽으면 <b>죽은 위치</b>가 모두의 화면에 표시돼</li>
+            <li>🔧 <b style="color:#b6e94a">기술자</b> — <b>환풍구(벤트)</b>로 빠르게 이동할 수 있어</li>
+          </ul>
+        </div>
+        <div class="rule-sec">
+          <h3>😈 특수 역할 (정체불명)</h3>
+          <ul>
+            <li>🫥 <b class="imp">투명인간</b> — 잠깐 <b>투명해져서</b> 아무도 못 봐 (쿨타임)</li>
+            <li>🎭 <b class="imp">현상변환자</b> — 다른 사람 <b>모습으로 변신</b>해서 속일 수 있어</li>
           </ul>
         </div>
         <div class="rule-sec">
@@ -536,6 +548,8 @@
 
     <div class="controls-bottom">
       <button class="action-btn report hidden" id="btnReport">🚨 시체 신고</button>
+      <button class="action-btn invis hidden" id="btnInvis">🫥 투명화</button>
+      <button class="action-btn shift hidden" id="btnShift">🎭 변신</button>
       <button class="action-btn vent hidden" id="btnVent">🕳 벤트</button>
       <button class="action-btn cctv hidden" id="btnCctv">📹 CCTV</button>
       <button class="action-btn task hidden" id="btnTask">🛠 미션</button>
@@ -554,6 +568,19 @@
       </div>
       <div id="ventList"></div>
       <button class="btn btn-ghost btn-small" id="btnVentExit" style="width:100%;margin-top:12px;">🚪 벤트에서 나가기</button>
+    </div>
+  </div>
+
+  <!-- SHAPESHIFT OVERLAY -->
+  <div id="overlayShift" class="overlay hidden">
+    <div class="meeting-panel" style="width:min(90vw,380px);">
+      <div class="meeting-header">
+        <p class="eyebrow">🎭 현상변환</p>
+        <h2 style="margin:2px 0;font-size:20px;">누구로 변신할까?</h2>
+        <p class="subtitle" style="margin:4px 0 0;">15초 동안 그 사람 모습이 돼요</p>
+      </div>
+      <div id="shiftList"></div>
+      <button class="btn btn-ghost btn-small" id="btnShiftCancel" style="width:100%;margin-top:12px;">취소</button>
     </div>
   </div>
 
@@ -1087,6 +1114,7 @@
     if(v!=='playing' && S.cctvOpen) closeCctv();
     if(v!=='playing' && S.vented) exitVent();
     if(v!=='playing') $('overlayRole').classList.add('hidden');
+    if(v!=='playing') $('overlayShift').classList.add('hidden');
   }
 
   function enterLobby(){
@@ -1173,12 +1201,19 @@
     const impostorMap = {};
     picked.slice(0, impostorCount).forEach(id => { impostorMap[id] = true; });
 
-    // 승무원 특수 역할 배정 (탐정 1, 노이즈메이커 1)
+    // 승무원 특수 역할 배정 (탐정, 노이즈메이커, 기술자)
     const crewIds = ids.filter(id => !impostorMap[id]);
     for(let i=crewIds.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); const t=crewIds[i]; crewIds[i]=crewIds[j]; crewIds[j]=t; }
     const roleMap = {};
     if(crewIds.length >= 2) roleMap[crewIds[0]] = 'detective';
     if(crewIds.length >= 3) roleMap[crewIds[1]] = 'noisemaker';
+    if(crewIds.length >= 4) roleMap[crewIds[2]] = 'engineer';
+    // 정체불명 변형 역할 (투명인간 / 현상변환자) — 각 임포스터에게 랜덤
+    Object.keys(impostorMap).forEach(iid => {
+      const r = Math.random();
+      if(r < 0.33) roleMap[iid] = 'phantom';
+      else if(r < 0.66) roleMap[iid] = 'shapeshifter';
+    });
 
     const updates = {};
     updates['status'] = 'playing';
@@ -1265,6 +1300,8 @@
     S.missionOpen = false;
     S.cctvOpen = false;
     S.vented = false;
+    S.invisible = false; S.invisUntil = 0; S.invisCdUntil = 0;
+    S.disguiseId = null; S.disguiseUntil = 0; S.shiftCdUntil = 0;
     S.deathFx = [];
     showRoleReveal();
     showRoleBanner();
@@ -1286,14 +1323,19 @@
     big.className = 'role-big';
     big.style.color = '';
     if(role==='impostor'){
-      big.classList.add('imp'); big.textContent = '😈 정체불명';
-      desc.textContent = '몰래 승무원을 제거하고 정체를 숨기세요!';
+      big.classList.add('imp');
+      if(crewRole==='phantom'){ big.textContent = '🫥 투명인간'; desc.textContent = '정체불명! 잠깐 투명해져서 몰래 다닐 수 있어요.'; }
+      else if(crewRole==='shapeshifter'){ big.textContent = '🎭 현상변환자'; desc.textContent = '정체불명! 다른 사람 모습으로 변신할 수 있어요.'; }
+      else { big.textContent = '😈 정체불명'; desc.textContent = '몰래 승무원을 제거하고 정체를 숨기세요!'; }
     } else if(crewRole==='detective'){
       big.textContent = '🔍 탐정'; big.style.color = '#5ce1ff';
       desc.textContent = '승무원 편! 시체를 신고하면 범인의 색 단서를 얻어요.';
     } else if(crewRole==='noisemaker'){
       big.textContent = '📢 노이즈메이커'; big.style.color = '#ff9a4d';
       desc.textContent = '승무원 편! 당신이 죽으면 죽은 위치가 모두에게 알려져요.';
+    } else if(crewRole==='engineer'){
+      big.textContent = '🔧 기술자'; big.style.color = '#b6e94a';
+      desc.textContent = '승무원 편! 환풍구(벤트)로 빠르게 이동할 수 있어요.';
     } else {
       big.classList.add('crew'); big.textContent = '🧑‍🚀 승무원';
       desc.textContent = '미션을 완료하고 정체불명을 찾아내세요!';
@@ -1339,7 +1381,7 @@
     presenceInterval = setInterval(()=>{
       if(!S.fdb || !S.roomCode) return;
       if(!(S.view==='playing'||S.view==='meeting')) return;
-      try{ roomRef('pos/'+S.myId).set({ x: Math.round(S.myPos.x), y: Math.round(S.myPos.y), t: Date.now(), hidden: S.vented?1:0 }); }catch(e){}
+      try{ roomRef('pos/'+S.myId).set({ x: Math.round(S.myPos.x), y: Math.round(S.myPos.y), t: Date.now(), hidden: (S.vented||S.invisible)?1:0, disguise: S.disguiseId||null }); }catch(e){}
     }, 120);
   }
 
@@ -1354,7 +1396,10 @@
       const p = players[id];
       const iAmAlive = S.roomData.players[S.myId] ? S.roomData.players[S.myId].alive : true;
       if(!p.alive && iAmAlive) continue; // 산 사람은 유령이 안 보임
-      out.push({ id, x: pos.x, y: pos.y, name: p.name, color: p.color, alive: p.alive });
+      let name = p.name, color = p.color;
+      // 현상변환자: 변신 대상 모습으로 보임
+      if(pos.disguise && players[pos.disguise]){ name = players[pos.disguise].name; color = players[pos.disguise].color; }
+      out.push({ id, x: pos.x, y: pos.y, name, color, alive: p.alive });
     }
     return out;
   }
@@ -1504,8 +1549,9 @@
       drawTaskSpot(spot.x, spot.y, mine, done, nowT);
     }
 
-    // 환풍구 (임포스터에게 강조)
-    const showVent = !!(S.roomData.impostorMap && S.roomData.impostorMap[S.myId]);
+    // 환풍구 (임포스터·기술자에게 강조)
+    const myRoleSp = (S.roomData.roleMap && S.roomData.roleMap[S.myId]) || null;
+    const showVent = !!(S.roomData.impostorMap && S.roomData.impostorMap[S.myId]) || myRoleSp==='engineer';
     for(const v of VENTS){ drawVent(v.x, v.y, showVent); }
 
     // detect deaths for kill effects
@@ -1549,7 +1595,11 @@
       const k = vfx.dir==='in' ? (1-p) : p;   // 1=완전히 밖, 0=벤트 안
       drawVentHop(vfx.x, vfx.y, colorHex(S.myColorId), k);
     } else if(myAlive){
-      drawCrewmate(mctx, S.myPos.x, S.myPos.y, colorHex(S.myColorId), S.myName + ' (나)', true, true, S.myFacing||1, S.myWalk||0);
+      // 변신 중이면 대상 모습, 투명 중이면 반투명하게
+      let myName = S.myName + ' (나)', myCol = S.myColorId;
+      if(S.disguiseId && allPlayers[S.disguiseId]){ myName = allPlayers[S.disguiseId].name + ' (나·변신)'; myCol = allPlayers[S.disguiseId].color; }
+      if(S.invisible){ mctx.save(); mctx.globalAlpha = 0.4; drawCrewmate(mctx, S.myPos.x, S.myPos.y, colorHex(myCol), myName+' (투명)', true, true, S.myFacing||1, S.myWalk||0); mctx.restore(); }
+      else { drawCrewmate(mctx, S.myPos.x, S.myPos.y, colorHex(myCol), myName, true, true, S.myFacing||1, S.myWalk||0); }
     } else {
       drawGhost(mctx, S.myPos.x, S.myPos.y, colorHex(S.myColorId), S.myName + ' (나·유령)', true);
     }
@@ -2029,15 +2079,19 @@
   }
 
   function updateKillButtonVisibility(){
-    const btnKill = $('btnKill'), btnMeeting = $('btnMeeting'), btnTask = $('btnTask'), btnCctv = $('btnCctv'), btnReport = $('btnReport'), btnVent = $('btnVent');
+    const btnKill = $('btnKill'), btnMeeting = $('btnMeeting'), btnTask = $('btnTask'), btnCctv = $('btnCctv'), btnReport = $('btnReport'), btnVent = $('btnVent'), btnInvis = $('btnInvis'), btnShift = $('btnShift');
     if(S.view !== 'playing' || !S.roomData){
-      btnKill.classList.add('hidden'); btnTask.classList.add('hidden'); btnCctv.classList.add('hidden'); btnReport.classList.add('hidden'); btnVent.classList.add('hidden');
+      btnKill.classList.add('hidden'); btnTask.classList.add('hidden'); btnCctv.classList.add('hidden'); btnReport.classList.add('hidden'); btnVent.classList.add('hidden'); btnInvis.classList.add('hidden'); btnShift.classList.add('hidden');
       return;
     }
     const me = S.roomData.players[S.myId];
     const myAlive = me ? me.alive : false;
     const role = myRole();
+    const myRoleSpecial = (S.roomData.roleMap && S.roomData.roleMap[S.myId]) || null;
     const now = Date.now();
+    // 투명화/변신 자동 종료
+    if(S.invisible && now > (S.invisUntil||0)) S.invisible = false;
+    if(S.disguiseId && now > (S.disguiseUntil||0)) S.disguiseId = null;
 
     // kill button (+ cooldown countdown)
     if(role==='impostor' && myAlive && !S.missionOpen){
@@ -2066,10 +2120,29 @@
     if(bodyId){ btnReport.classList.remove('hidden'); btnReport.dataset.bodyId = bodyId; }
     else { btnReport.classList.add('hidden'); }
 
-    // 벤트 버튼 (임포스터가 환풍구 위에 있을 때)
-    const vent = (role==='impostor' && myAlive && !S.missionOpen && !S.vented) ? nearestVent() : null;
+    // 벤트 버튼 (임포스터 또는 기술자가 환풍구 위에 있을 때)
+    const canVent = (role==='impostor' || myRoleSpecial==='engineer');
+    const vent = (canVent && myAlive && !S.missionOpen && !S.vented) ? nearestVent() : null;
     btnVent.classList.toggle('hidden', !vent);
     if(vent) btnVent.dataset.ventId = vent.id;
+
+    // 투명화 버튼 (투명인간)
+    if(myRoleSpecial==='phantom' && myAlive && !S.missionOpen && !S.vented){
+      btnInvis.classList.remove('hidden');
+      const cd = (S.invisCdUntil||0) - now;
+      if(S.invisible){ btnInvis.disabled = true; btnInvis.textContent = '🫥 투명 '+Math.ceil(((S.invisUntil||0)-now)/1000)+'초'; }
+      else if(cd > 0){ btnInvis.disabled = true; btnInvis.textContent = '🫥 '+Math.ceil(cd/1000)+'초'; }
+      else { btnInvis.disabled = false; btnInvis.textContent = '🫥 투명화'; }
+    } else { btnInvis.classList.add('hidden'); }
+
+    // 변신 버튼 (현상변환자)
+    if(myRoleSpecial==='shapeshifter' && myAlive && !S.missionOpen && !S.vented){
+      btnShift.classList.remove('hidden');
+      const cd = (S.shiftCdUntil||0) - now;
+      if(S.disguiseId){ btnShift.disabled = false; btnShift.textContent = '🎭 원래대로'; }
+      else if(cd > 0){ btnShift.disabled = true; btnShift.textContent = '🎭 '+Math.ceil(cd/1000)+'초'; }
+      else { btnShift.disabled = false; btnShift.textContent = '🎭 변신'; }
+    } else { btnShift.classList.add('hidden'); }
 
     // meeting button (shared cooldown countdown)
     const nextAt = S.roomData.nextMeetingAt || 0;
@@ -2727,6 +2800,44 @@
     S.vented = false;
   }
 
+  // 투명인간: 잠깐 투명해지기
+  const INVIS_DUR = 8000, INVIS_CD = 25000;
+  function doInvis(){
+    const now = Date.now();
+    if(S.invisible || now < (S.invisCdUntil||0)) return;
+    S.invisible = true;
+    S.invisUntil = now + INVIS_DUR;
+    S.invisCdUntil = now + INVIS_CD;
+  }
+
+  // 현상변환자: 변신 대상 선택
+  const SHIFT_DUR = 15000, SHIFT_CD = 30000;
+  function openShift(){
+    if(S.disguiseId){ // 원래대로
+      S.disguiseId = null; S.shiftCdUntil = Date.now() + SHIFT_CD; return;
+    }
+    if(Date.now() < (S.shiftCdUntil||0)) return;
+    const list = $('shiftList'); list.innerHTML = '';
+    const players = S.roomData.players || {};
+    const ids = Object.keys(players).filter(id => id!==S.myId && players[id].alive);
+    if(!ids.length){ list.innerHTML = '<div class="chat-empty">변신할 대상이 없어요</div>'; }
+    for(const id of ids){
+      const p = players[id];
+      const row = document.createElement('div'); row.className = 'shift-dest';
+      row.innerHTML = '<div class="dot" style="background:'+colorHex(p.color)+'"></div><b>'+escapeHtml(p.name)+'</b> 로 변신';
+      row.addEventListener('click', ()=> doShift(id));
+      list.appendChild(row);
+    }
+    $('overlayShift').classList.remove('hidden');
+  }
+  function doShift(id){
+    S.disguiseId = id;
+    S.disguiseUntil = Date.now() + SHIFT_DUR;
+    S.shiftCdUntil = Date.now() + SHIFT_CD;
+    $('overlayShift').classList.add('hidden');
+  }
+  function cancelShift(){ $('overlayShift').classList.add('hidden'); }
+
   // ============================================================
   // CCTV (보안 카메라) — 컴퓨터 있는 방에서 전체 맵을 실시간 감시
   // ============================================================
@@ -3223,6 +3334,9 @@
   $('btnReport').addEventListener('click', doReport);
   $('btnVent').addEventListener('click', enterVent);
   $('btnVentExit').addEventListener('click', exitVent);
+  $('btnInvis').addEventListener('click', doInvis);
+  $('btnShift').addEventListener('click', openShift);
+  $('btnShiftCancel').addEventListener('click', cancelShift);
   $('chatSend').addEventListener('click', sendChat);
   $('chatInput').addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); sendChat(); } });
   $('btnTask').addEventListener('click', openMission);
