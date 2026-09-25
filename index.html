@@ -361,6 +361,14 @@
   .result-panel{ text-align:center; }
   .result-panel .who{ font-size:22px; margin:10px 0 4px; }
   .result-panel .verdict{ font-size:15px; color: var(--text-dim); margin-bottom: 6px; }
+  /* 역할 공개 */
+  .role-big{ font-family:'Jua',sans-serif; font-size:44px; text-align:center; opacity:0; transform:scale(0.5); animation: roleIn .6s cubic-bezier(.2,1.3,.5,1) forwards; text-shadow:0 0 30px currentColor; }
+  .role-big.imp{ color:var(--danger); }
+  .role-big.crew{ color:var(--success); }
+  .role-desc{ font-size:16px; color:var(--text); text-align:center; margin-top:14px; opacity:0; animation: roleFade .5s .35s forwards; padding:0 24px; text-wrap:balance; }
+  .role-mates{ font-size:14px; color:var(--danger); text-align:center; margin-top:10px; opacity:0; animation: roleFade .5s .5s forwards; }
+  @keyframes roleIn{ to{ opacity:1; transform:scale(1); } }
+  @keyframes roleFade{ to{ opacity:1; } }
   #ejectCanvas{ position:absolute; inset:0; width:100%; height:100%; }
   .eject-text{ position:relative; z-index:1; font-family:'Jua',sans-serif; font-size:26px; color:#fff; text-align:center; text-wrap:balance; padding:0 20px; text-shadow:0 2px 12px rgba(0,0,0,0.8); opacity:0; transition:opacity .5s; }
   .eject-sub{ position:relative; z-index:1; font-size:15px; color:var(--text-dim); margin-top:10px; opacity:0; transition:opacity .5s; }
@@ -596,6 +604,13 @@
     <canvas id="ejectCanvas"></canvas>
     <div id="ejectText" class="eject-text"></div>
     <div id="ejectSub" class="eject-sub"></div>
+  </div>
+
+  <!-- ROLE REVEAL OVERLAY -->
+  <div id="overlayRole" class="overlay hidden" style="background:#03040a;flex-direction:column;">
+    <div id="roleBig" class="role-big"></div>
+    <div id="roleDesc" class="role-desc"></div>
+    <div id="roleMates" class="role-mates"></div>
   </div>
 
   <!-- END OVERLAY -->
@@ -1065,6 +1080,7 @@
     if(v!=='playing' && S.missionOpen) closeMission();
     if(v!=='playing' && S.cctvOpen) closeCctv();
     if(v!=='playing' && S.vented) exitVent();
+    if(v!=='playing') $('overlayRole').classList.add('hidden');
   }
 
   function enterLobby(){
@@ -1234,6 +1250,7 @@
     S.cctvOpen = false;
     S.vented = false;
     S.deathFx = [];
+    showRoleReveal();
     showRoleBanner();
     renderHudPlayerList();
     startGameLoop();
@@ -1241,6 +1258,28 @@
 
   function myRole(){
     return isImpostor(S.myId) ? 'impostor' : 'crew';
+  }
+
+  // 게임 시작 시 화면 가득 역할 공개
+  function showRoleReveal(){
+    if(S.lastRevealRound === S.roomData.round) return;
+    S.lastRevealRound = S.roomData.round;
+    const role = myRole();
+    const big = $('roleBig'), desc = $('roleDesc'), mates = $('roleMates');
+    big.className = 'role-big ' + (role==='impostor' ? 'imp' : 'crew');
+    big.textContent = role==='impostor' ? '😈 정체불명' : '🧑‍🚀 승무원';
+    desc.textContent = role==='impostor' ? '몰래 승무원을 제거하고 정체를 숨기세요!' : '미션을 완료하고 정체불명을 찾아내세요!';
+    const imp = S.roomData.impostorMap || {};
+    const mateNames = Object.keys(imp).filter(id => id!==S.myId && S.roomData.players[id]).map(id => S.roomData.players[id].name);
+    mates.textContent = (role==='impostor' && mateNames.length) ? ('동료 정체불명: ' + mateNames.join(', ')) : '';
+    const ov = $('overlayRole');
+    ov.classList.remove('hidden');
+    // CSS 애니메이션 재시작
+    [big,desc,mates].forEach(el=>{ el.style.animation='none'; });
+    void big.offsetWidth;
+    [big,desc,mates].forEach(el=>{ el.style.animation=''; });
+    clearTimeout(showRoleReveal._t);
+    showRoleReveal._t = setTimeout(()=>{ ov.classList.add('hidden'); }, 3600);
   }
 
   function showRoleBanner(){
