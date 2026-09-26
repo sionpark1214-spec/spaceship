@@ -972,15 +972,19 @@
   // 🔊 효과음 — 파일 없이 코드로 소리 생성 (Web Audio)
   // ============================================================
   const SFX = (()=>{
-    let ctx = null;
+    let ctx = null, unlocked = false;
     function ensure(){
       try{ if(!ctx) ctx = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){}
       if(ctx && ctx.state==='suspended'){ try{ ctx.resume(); }catch(e){} }
       return ctx;
     }
-    // 브라우저는 사용자가 한 번 눌러야 소리를 허용 → 첫 입력에 오디오 깨우기
-    window.addEventListener('pointerdown', ensure);
-    window.addEventListener('keydown', ensure);
+    // 브라우저는 사용자가 한 번 눌러야 소리를 허용 → 아무거나 처음 누르면 오디오 켜고 "삡" 소리로 알려줌
+    function unlock(){
+      const c = ensure();
+      if(c && !unlocked){ unlocked = true; setTimeout(()=>{ try{ blip(); }catch(e){} }, 60); }
+    }
+    ['pointerdown','touchstart','touchend','mousedown','click','keydown'].forEach(ev=>
+      window.addEventListener(ev, unlock, {passive:true}));
     function tone(freq, dur, type, vol, delay, slideTo){
       const c = ensure(); if(!c) return;
       const t0 = c.currentTime + (delay||0);
@@ -1004,13 +1008,16 @@
       const g = c.createGain(); g.gain.setValueAtTime(vol||0.2, t0); g.gain.exponentialRampToValueAtTime(0.0001, t0+dur);
       n.connect(g); g.connect(c.destination); n.start(t0); n.stop(t0+dur+0.02);
     }
+    function blip(){ tone(880,0.09,'sine',0.22,0); }
     return {
-      kill(){ noise(0.16, 0.35); tone(420, 0.2, 'sawtooth', 0.28, 0, 70); },
-      meeting(){ tone(150, 0.55, 'sawtooth', 0.32, 0, 300); tone(300, 0.5, 'square', 0.12, 0.06); },
-      sabotage(){ tone(900,0.16,'square',0.22,0); tone(640,0.16,'square',0.22,0.2); tone(900,0.16,'square',0.22,0.4); },
-      success(){ tone(660,0.12,'sine',0.28,0); tone(880,0.14,'sine',0.28,0.11); tone(1180,0.16,'sine',0.24,0.24); },
-      eject(){ tone(520,0.7,'sine',0.26,0,110); },
-      win(){ tone(523,0.15,'triangle',0.28,0); tone(659,0.15,'triangle',0.28,0.15); tone(784,0.25,'triangle',0.28,0.3); },
+      blip,
+      tap(){ tone(660,0.05,'square',0.16,0); },
+      kill(){ noise(0.16, 0.4); tone(420, 0.2, 'sawtooth', 0.3, 0, 70); },
+      meeting(){ tone(150, 0.55, 'sawtooth', 0.34, 0, 300); tone(300, 0.5, 'square', 0.14, 0.06); },
+      sabotage(){ tone(900,0.16,'square',0.26,0); tone(640,0.16,'square',0.26,0.2); tone(900,0.16,'square',0.26,0.4); },
+      success(){ tone(660,0.12,'sine',0.3,0); tone(880,0.14,'sine',0.3,0.11); tone(1180,0.16,'sine',0.26,0.24); },
+      eject(){ tone(520,0.7,'sine',0.28,0,110); },
+      win(){ tone(523,0.15,'triangle',0.3,0); tone(659,0.15,'triangle',0.3,0.15); tone(784,0.25,'triangle',0.3,0.3); },
     };
   })();
 
