@@ -1335,6 +1335,11 @@
     updates['nextMeetingAt'] = 0;
     updates['sabotage'] = null;
     updates['nextSabotageAt'] = 0;
+    updates['sabUsed'] = null;
+    // 이번 판에 나올 사보타주 종류를 랜덤으로 뽑기 (6개 중 3개)
+    const sabTypes = Object.keys(SABOTAGES);
+    for(let i=sabTypes.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); const t=sabTypes[i]; sabTypes[i]=sabTypes[j]; sabTypes[j]=t; }
+    updates['sabPool'] = sabTypes.slice(0, 3);
     updates['round'] = (S.roomData.round||0) + 1;
     for(const id of ids){
       updates['players/'+id+'/alive'] = true;
@@ -2295,9 +2300,11 @@
     if(!sabActive) S._endingSab = false;
     if(role==='impostor' && myAlive && !S.missionOpen && !S.vented && !sabActive){
       const scd = (S.roomData.nextSabotageAt||0) - now;
+      const remain = myMaxSab() - mySabUsed();
       btnSabotage.classList.remove('hidden');
-      btnSabotage.disabled = scd > 0;
-      btnSabotage.textContent = scd > 0 ? ('⚡ '+Math.ceil(scd/1000)+'초') : '⚡ 사보타주';
+      btnSabotage.disabled = scd > 0 || remain <= 0;
+      btnSabotage.textContent = remain <= 0 ? '⚡ 다 씀'
+        : (scd > 0 ? ('⚡ '+Math.ceil(scd/1000)+'초') : ('⚡ 사보타주 ('+remain+')'));
     } else { btnSabotage.classList.add('hidden'); }
     // 고치기 버튼: 사보타주가 필요로 하는 방 안에 있고, 그 방이 아직 안 고쳐졌을 때
     const roomFixed = sab && sab.fix && rm && sab.fix[rm.name];
@@ -3131,6 +3138,14 @@
     const cfg = sabCfg(sab.type); const fx = sab.fix || {};
     return cfg.rooms.every(r => fx[r]);
   }
+  // 정체불명 역할별 사보타주 사용 가능 횟수: 투명인간 1, 형상변환자 2, 그냥 정체불명 3
+  function maxSabFor(id){
+    const r = (S.roomData && S.roomData.roleMap && S.roomData.roleMap[id]) || null;
+    return r==='phantom' ? 1 : (r==='shapeshifter' ? 2 : 3);
+  }
+  function myMaxSab(){ return maxSabFor(S.myId); }
+  function mySabUsed(){ return (S.roomData && S.roomData.sabUsed && S.roomData.sabUsed[S.myId]) || 0; }
+  function sabPoolList(){ return (S.roomData && S.roomData.sabPool) || Object.keys(SABOTAGES); }
 
   // 정체불명: 사보타주 메뉴 열기
   function doSabotage(){
@@ -3146,29 +3161,41 @@
     const wrap = $('sabMenu'); if(!wrap) return;
     const onCd = Date.now() < (S.roomData.nextSabotageAt||0);
     const cdLeft = Math.ceil(((S.roomData.nextSabotageAt||0) - Date.now())/1000);
-    wrap.innerHTML = '';
-    for(const type in SABOTAGES){
-      const c = SABOTAGES[type];
-      const btn = document.createElement('button');
-      btn.className = 'btn sab-opt' + (c.critical?' crit':'');
-      btn.innerHTML = '<span class="sab-ic">'+c.icon+'</span> '+c.name +
-        (c.critical?'<span class="sab-tag">위급 · '+Math.round(c.dur/1000)+'초</span>':'<span class="sab-tag">방해</span>');
-      btn.disabled = onCd;
-      btn.addEventListener('click', ()=> castSabotage(type));
-      wrap.appendChild(btn);
+    const remain = myMaxSab() - mySabUsed();
+    const pool = sabPoolList();
+    // 버튼은 종류가 바뀔 때만 새로 만든다 (매 프레임 새로 만들면 클릭이 씹힘)
+    const sig = pool.join(',');
+    if(wrap.dataset.sig !== sig){
+      wrap.dataset.sig = sig;
+      wrap.innerHTML = '';
+      for(const type of pool){
+        const c = SABOTAGES[type]; if(!c) continue;
+        const btn = document.createElement('button');
+        btn.className = 'btn sab-opt' + (c.critical?' crit':'');
+        btn.innerHTML = '<span class="sab-ic">'+c.icon+'</span> '+c.name +
+          (c.critical?'<span class="sab-tag">위급 · '+Math.round(c.dur/1000)+'초</span>':'<span class="sab-tag">방해</span>');
+        btn.addEventListener('click', ()=> castSabotage(type));
+        wrap.appendChild(btn);
+      }
     }
-    $('sabHint').textContent = onCd ? ('재사용까지 '+cdLeft+'초') : '터뜨릴 방해공작을 골라!';
+    // 상태만 매 프레임 갱신 (버튼은 그대로 두고)
+    [...wrap.children].forEach(btn=>{ btn.disabled = onCd || remain<=0; });
+    $('sabHint').textContent = remain<=0 ? '이번 판 사보타주를 다 썼어! 😮'
+      : (onCd ? ('재사용까지 '+cdLeft+'초') : ('방해공작을 골라! (남은 '+remain+'번)'));
   }
   async function castSabotage(type){
     if(!S.roomData || S.roomData.status!=='playing' || S.roomData.sabotage) return;
     if(Date.now() < (S.roomData.nextSabotageAt||0)) return;
+    if(!sabPoolList().includes(type)) return;
+    const used = mySabUsed();
+    if(used >= myMaxSab()) return;                 // 내 사보타주 횟수 다 씀
     const c = sabCfg(type);
     const sab = { type, at: Date.now(), fix: null };
     if(type==='lights') sab.sw = null;
     if(c.critical) sab.deadline = Date.now() + c.dur;
-    try{
-      await roomRef('').update({ sabotage: sab, nextSabotageAt: Date.now() + SAB_CD });
-    }catch(e){}
+    const updates = { sabotage: sab, nextSabotageAt: Date.now() + SAB_CD };
+    updates['sabUsed/'+S.myId] = used + 1;
+    try{ await roomRef('').update(updates); }catch(e){}
     closeSabMenu();
   }
 
@@ -3188,15 +3215,19 @@
     const wrap = $('fixSwitches'); if(!wrap) return;
     if(!sab || sab.type!=='lights'){ closeFix(); return; }
     const sw = sab.sw || {};
-    wrap.innerHTML = '';
-    for(let i=0;i<NUM_SWITCHES;i++){
-      const on = !!sw[i];
-      const el = document.createElement('div');
-      el.className = 'fix-switch' + (on?' on':'');
-      el.innerHTML = '<div class="knob"></div>';
-      if(!on) el.addEventListener('click', ()=> flipSwitch(i));
-      wrap.appendChild(el);
+    // 스위치는 처음 한 번만 만든다 (매 프레임 새로 만들면 클릭이 씹힘)
+    if(wrap.children.length !== NUM_SWITCHES){
+      wrap.innerHTML = '';
+      for(let i=0;i<NUM_SWITCHES;i++){
+        const el = document.createElement('div');
+        el.className = 'fix-switch';
+        el.innerHTML = '<div class="knob"></div>';
+        el.addEventListener('click', ()=> flipSwitch(i));
+        wrap.appendChild(el);
+      }
     }
+    // 켜짐 상태만 매 프레임 갱신 (다른 사람이 올린 것도 반영)
+    [...wrap.children].forEach((el,i)=> el.classList.toggle('on', !!sw[i]));
   }
   async function flipSwitch(i){
     const sab = S.roomData && S.roomData.sabotage; if(!sab) return;
