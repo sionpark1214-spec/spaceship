@@ -304,6 +304,7 @@
   .imp-opt.sel, .set-opt.sel{ background: var(--accent); color:#3a2c02; border-color: var(--accent); }
   .set-opt{ flex:1; }
   .action-btn.sabotage{ background:#ff3b6b; color:#fff; }
+  .action-btn.infect{ background:#6ab04c; color:#0a2010; }
   .action-btn.fix{ background:#ffd23f; color:#3a2c02; animation: reportPulse 0.8s ease-in-out infinite; }
   .action-btn.invis{ background:#8aa0c8; color:#0e1330; }
   #sabotageBanner{
@@ -594,7 +595,13 @@
         <p class="eyebrow">방장 설정</p>
         <h2 style="margin:2px 0;font-size:20px;">⚙ 게임 설정</h2>
       </div>
-      <div class="picker-label" style="margin-top:6px;">😈 정체불명 인원</div>
+      <div class="picker-label" style="margin-top:6px;">🎮 게임 모드</div>
+      <div class="row" style="gap:8px;">
+        <button class="btn btn-ghost btn-small set-opt" data-set="mode" data-mode="mafia">🔪 마피아</button>
+        <button class="btn btn-ghost btn-small set-opt" data-set="mode" data-mode="zombie">🧟 좀비</button>
+      </div>
+
+      <div class="picker-label" style="margin-top:12px;">😈 정체불명 인원</div>
       <div class="row" id="impCountRow" style="gap:10px;">
         <button class="btn btn-ghost btn-small imp-opt" data-n="1">1명</button>
         <button class="btn btn-ghost btn-small imp-opt" data-n="2">2명</button>
@@ -654,6 +661,7 @@
       <button class="action-btn admin hidden" id="btnAdmin">🗺 지도</button>
       <button class="action-btn vitals hidden" id="btnVitals">❤️ 생체신호</button>
       <button class="action-btn task hidden" id="btnTask">🛠 미션</button>
+      <button class="action-btn infect hidden" id="btnInfect">🧟 감염</button>
       <button class="action-btn kill hidden" id="btnKill">🔪 제거하기</button>
       <button class="action-btn meeting" id="btnMeeting">🚨 긴급회의</button>
     </div>
@@ -1022,7 +1030,7 @@
   }
   function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
   function dist(x1,y1,x2,y2){ return Math.hypot(x1-x2, y1-y2); }
-  function colorHex(id){ const c = COLORS.find(c=>c.id===id); return c ? c.hex : '#8891c2'; }
+  function colorHex(id){ if(id==='zombie') return '#6ab04c'; const c = COLORS.find(c=>c.id===id); return c ? c.hex : '#8891c2'; }
 
   // ============================================================
   // 🔊 효과음 — 파일 없이 코드로 소리 생성 (Web Audio)
@@ -1200,6 +1208,8 @@
     data = data || S.roomData;
     return !!(data && data.impostorMap && data.impostorMap[id]);
   }
+  function gameMode(){ return (S.roomData && S.roomData.mode) || 'mafia'; }
+  function isZombie(id, data){ data = data || S.roomData; return !!(data && data.zombieMap && data.zombieMap[id]); }
 
   // ============================================================
   // Room helpers
@@ -1415,7 +1425,7 @@
     const startBtn = $('btnStartGame');
     startBtn.disabled = count < 1;
     startBtn.textContent = count <= 1 ? '▶ 혼자 시작 (테스트)' : '▶ 게임 시작';
-    $('btnSettings').textContent = '⚙ 설정 (정체불명 ' + (S.roomData.impCount || defaultImpCount(count)) + '명)';
+    $('btnSettings').textContent = (S.roomData.mode==='zombie') ? '⚙ 설정 (🧟 좀비 모드)' : ('⚙ 설정 (🔪 마피아)');
     if(!$('overlaySettings').classList.contains('hidden')) renderImpOpts();
   }
 
@@ -1439,11 +1449,14 @@
     });
     $('settingsHint').textContent = '현재 ' + cnt + '명 · 정체불명 최대 ' + maxImp + '명까지';
     // 나머지 설정(킬쿨/이동속도/미션수) 선택 표시
-    document.querySelectorAll('.set-opt').forEach(b=>{
+    document.querySelectorAll('.set-opt[data-v]').forEach(b=>{
       const key = b.dataset.set;
       const v = parseFloat(b.dataset.v);
       b.classList.toggle('sel', getSetting(key) === v);
     });
+    // 게임 모드 선택 표시
+    const curMode = S.roomData.mode || 'mafia';
+    document.querySelectorAll('.set-opt[data-mode]').forEach(b=> b.classList.toggle('sel', b.dataset.mode===curMode));
   }
   async function setSetting(key, v){
     if(!S.isHost || !S.roomData) return;
@@ -1514,10 +1527,36 @@
   // ============================================================
   // Game start (host only)
   // ============================================================
+  const ZOMBIE_SURVIVE_MS = 90000;   // 인간이 버텨야 하는 시간
+  async function startZombieGame(ids){
+    const n = ids.length;
+    const shuffled = ids.slice();
+    for(let i=shuffled.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); const t=shuffled[i]; shuffled[i]=shuffled[j]; shuffled[j]=t; }
+    const zCount = n >= 8 ? 2 : 1;   // 8명 이상이면 좀비 2명으로 시작
+    const zombieMap = {};
+    shuffled.slice(0, zCount).forEach(id => zombieMap[id] = true);
+    const updates = {};
+    updates['status'] = 'playing';
+    updates['mode'] = 'zombie';
+    updates['zombieMap'] = zombieMap;
+    updates['zEndAt'] = Date.now() + ZOMBIE_SURVIVE_MS;
+    updates['impostorMap'] = null; updates['roleMap'] = null; updates['meeting'] = null;
+    updates['sabotage'] = null; updates['noiseAlert'] = null; updates['lastEjected'] = null;
+    updates['winner'] = null; updates['winReason'] = null; updates['pos'] = null;
+    updates['round'] = (S.roomData.round||0) + 1;
+    for(const id of ids){
+      updates['players/'+id+'/alive'] = true;
+      updates['players/'+id+'/bodyX'] = null; updates['players/'+id+'/bodyY'] = null;
+      updates['players/'+id+'/reported'] = null; updates['players/'+id+'/tasks'] = null;
+    }
+    await roomRef('').update(updates);
+  }
+
   async function startGame(){
     if(!S.isHost || !S.roomData) return;
     const ids = Object.keys(S.roomData.players || {});
     if(ids.length < 1) return;
+    if((S.roomData.mode||'mafia') === 'zombie'){ return startZombieGame(ids); }
     const n = ids.length;
     const chosen = S.roomData.impCount || defaultImpCount(n);
     const impostorCount = Math.max(1, Math.min(chosen, Math.max(1, n-1)));
@@ -1554,6 +1593,8 @@
 
     const updates = {};
     updates['status'] = 'playing';
+    updates['mode'] = 'mafia';
+    updates['zombieMap'] = null; updates['zEndAt'] = null;
     updates['impostorMap'] = impostorMap;
     updates['roleMap'] = roleMap;
     updates['noiseAlert'] = null;
@@ -1650,6 +1691,7 @@
     S.vented = false;
     S.invisible = false; S.invisUntil = 0; S.invisCdUntil = 0;
     S.disguiseId = null; S.disguiseUntil = 0; S.shiftCdUntil = 0; S.shiftPendingId = null; S.shiftReadyAt = 0;
+    S._zEnding = false;
     S.deathFx = [];
     showRoleReveal();
     showRoleBanner();
@@ -1671,6 +1713,15 @@
     const crewRole = (S.roomData.roleMap && S.roomData.roleMap[S.myId]) || null;
     big.className = 'role-big';
     big.style.color = '';
+    if(gameMode()==='zombie'){
+      mates.textContent = '';
+      if(isZombie(S.myId)){ big.classList.add('imp'); big.textContent='🧟 좀비'; big.style.color='#6ab04c'; desc.textContent='사람들을 잡아서 감염시켜! 다 좀비로 만들면 승리!'; }
+      else { big.classList.add('crew'); big.textContent='🏃 인간'; desc.textContent='좀비한테 안 잡히게 도망쳐! 끝까지 살아남으면 승리!'; }
+      const ov=$('overlayRole'); ov.classList.remove('hidden');
+      [big,desc,mates].forEach(el=>{ el.style.animation='none'; }); void big.offsetWidth; [big,desc,mates].forEach(el=>{ el.style.animation=''; });
+      clearTimeout(showRoleReveal._t); showRoleReveal._t=setTimeout(()=>ov.classList.add('hidden'),3600);
+      return;
+    }
     if(role==='impostor'){
       big.classList.add('imp');
       if(crewRole==='phantom'){ big.textContent = '🫥 투명인간'; desc.textContent = '정체불명! 잠깐 투명해져서 몰래 다닐 수 있어요.'; }
@@ -1705,16 +1756,29 @@
   function showRoleBanner(){
     if(S.lastRoleRound === S.roomData.round){ updateRoleBannerText(); return; }
     S.lastRoleRound = S.roomData.round;
-    const role = myRole();
     const banner = $('roleBanner');
     banner.classList.remove('hidden');
+    if(gameMode()==='zombie'){
+      const z = isZombie(S.myId);
+      banner.className = 'role-banner ' + (z?'impostor':'crew');
+      banner.textContent = z ? '🧟 당신은 좀비! 사람들을 감염시키세요' : '🏃 당신은 인간! 끝까지 도망치세요';
+      setTimeout(()=>{ updateRoleBannerText(); }, 3500);
+      return;
+    }
+    const role = myRole();
     banner.className = 'role-banner ' + role;
     banner.textContent = role === 'impostor' ? '😈 당신은 정체불명입니다! 몰래 승무원을 제거하세요' : '🧑‍🚀 당신은 승무원입니다. 정체불명을 찾아내세요!';
     setTimeout(()=>{ updateRoleBannerText(); }, 3500);
   }
   function updateRoleBannerText(){
-    const role = myRole();
     const banner = $('roleBanner');
+    if(gameMode()==='zombie'){
+      const z = isZombie(S.myId);
+      banner.className = 'role-banner ' + (z?'impostor':'crew');
+      banner.textContent = z ? '🧟 좀비' : '🏃 인간';
+      return;
+    }
+    const role = myRole();
     banner.className = 'role-banner ' + role;
     banner.textContent = role === 'impostor' ? '😈 정체불명' : '🧑‍🚀 승무원';
   }
@@ -1964,8 +2028,9 @@
         S.peerPrevDisg[peer.id] = peer.disguise;
       }
       if(peer.alive){
-        drawPet(peer.id, peer.x, peer.y, S.peerFacing[peer.id]||1);
-        drawCrewmate(mctx, peer.x, peer.y, colorHex(peer.color), peer.name, true, false, S.peerFacing[peer.id]||1, S.peerWalk[peer.id]||0);
+        const pz = gameMode()==='zombie' && isZombie(peer.id);
+        if(!pz) drawPet(peer.id, peer.x, peer.y, S.peerFacing[peer.id]||1);
+        drawCrewmate(mctx, peer.x, peer.y, pz?'#6ab04c':colorHex(peer.color), (pz?'🧟 ':'')+peer.name, true, false, S.peerFacing[peer.id]||1, S.peerWalk[peer.id]||0);
       } else {
         drawGhost(mctx, peer.x, peer.y, colorHex(peer.color), peer.name, false);
       }
@@ -1982,7 +2047,9 @@
       // 변신 중이면 대상 모습, 투명 중이면 반투명하게
       let myName = S.myName + ' (나)', myCol = S.myColorId;
       if(S.disguiseId && allPlayers[S.disguiseId]){ myName = allPlayers[S.disguiseId].name + ' (나·변신)'; myCol = allPlayers[S.disguiseId].color; }
-      if(!S.disguiseId) drawPet(S.myId, S.myPos.x, S.myPos.y, S.myFacing||1);
+      const meZ = gameMode()==='zombie' && isZombie(S.myId);
+      if(meZ){ myCol = 'zombie'; myName = '🧟 ' + S.myName + ' (나)'; }
+      if(!S.disguiseId && !meZ) drawPet(S.myId, S.myPos.x, S.myPos.y, S.myFacing||1);
       if(S.invisible){ mctx.save(); mctx.globalAlpha = 0.4; drawCrewmate(mctx, S.myPos.x, S.myPos.y, colorHex(myCol), myName+' (투명)', true, true, S.myFacing||1, S.myWalk||0); mctx.restore(); }
       else { drawCrewmate(mctx, S.myPos.x, S.myPos.y, colorHex(myCol), myName, true, true, S.myFacing||1, S.myWalk||0); }
     } else {
@@ -2481,6 +2548,43 @@
     return (best && bestD <= KILL_RANGE) ? best : null;
   }
 
+  // 🧟 근처의 인간(좀비 아님) 찾기
+  function nearestHuman(){
+    const players = S.roomData.players || {};
+    let best=null, bestD=Infinity;
+    for(const id in players){
+      if(id===S.myId || isZombie(id)) continue;
+      const pos = S.positions[id]; if(!pos) continue;
+      const d = dist(S.myPos.x, S.myPos.y, pos.x, pos.y);
+      if(d < bestD){ bestD = d; best = id; }
+    }
+    return (best && bestD <= KILL_RANGE*1.2) ? best : null;
+  }
+  async function doInfect(){
+    const targetId = $('btnInfect').dataset.targetId;
+    if(!targetId || !S.roomData || isZombie(targetId)) return;
+    SFX.kill();
+    // 감염 순간 이펙트 (초록 터짐 재활용)
+    const tpos = S.positions[targetId];
+    if(tpos){ S.shiftBursts = S.shiftBursts||[]; S.shiftBursts.push({ x:tpos.x, y:tpos.y, t:performance.now() }); }
+    try{ await roomRef('zombieMap/'+targetId).set(true); }catch(e){}
+  }
+  // 좀비 게임 승패 판정: 인간 전멸 → 좀비 승리 / 시간 다 됨 → 인간 승리
+  function resolveZombieEnd(){
+    if(gameMode()!=='zombie' || !S.roomData || S.roomData.status!=='playing') return;
+    if(isSoloTest()) return;   // 혼자 테스트는 안 끝냄
+    if(S._zEnding) return;
+    const players = S.roomData.players || {};
+    const humans = Object.keys(players).filter(id=>!isZombie(id)).length;
+    let outcome = null, reason = null;
+    if(humans === 0){ outcome='zombie'; reason='🧟 모두 감염됐어요!'; }
+    else if(Date.now() > (S.roomData.zEndAt||0)){ outcome='human'; reason='🏃 인간이 끝까지 살아남았어요!'; }
+    if(outcome){
+      S._zEnding = true;
+      try{ roomRef('').update({ status:'ended', winner:outcome, winReason:reason }); }catch(e){}
+    }
+  }
+
   function nearestMyTask(){
     const me = S.roomData.players[S.myId];
     if(!me || !me.tasks) return null;
@@ -2511,7 +2615,7 @@
     if(S.view !== 'playing' || !S.roomData){
       btnKill.classList.add('hidden'); btnTask.classList.add('hidden'); btnCctv.classList.add('hidden'); btnReport.classList.add('hidden'); btnVent.classList.add('hidden'); btnInvis.classList.add('hidden'); btnShift.classList.add('hidden');
       $('btnSabotage').classList.add('hidden'); $('btnFix').classList.add('hidden'); $('sabotageBanner').classList.add('hidden');
-      $('btnAdmin').classList.add('hidden'); $('btnVitals').classList.add('hidden');
+      $('btnAdmin').classList.add('hidden'); $('btnVitals').classList.add('hidden'); $('btnInfect').classList.add('hidden');
       return;
     }
     const me = S.roomData.players[S.myId];
@@ -2519,6 +2623,34 @@
     const role = myRole();
     const myRoleSpecial = (S.roomData.roleMap && S.roomData.roleMap[S.myId]) || null;
     const now = Date.now();
+
+    // ===== 🧟 좀비 모드: 다른 버튼 다 숨기고 감염 버튼 + 생존 타이머만 =====
+    if(gameMode()==='zombie'){
+      ['btnKill','btnTask','btnCctv','btnReport','btnVent','btnInvis','btnShift','btnSabotage','btnFix','btnAdmin','btnVitals'].forEach(x=>$(x).classList.add('hidden'));
+      $('btnMeeting').classList.add('hidden');
+      $('taskBar').classList.add('hidden');
+      updateRoleBannerText();   // 감염되면 상단 표시도 바로 바뀜
+      const meZombie = isZombie(S.myId);
+      // 감염 버튼: 좀비가 근처 인간에게
+      if(meZombie){
+        const target = nearestHuman();
+        $('btnInfect').classList.toggle('hidden', !target);
+        $('btnInfect').dataset.targetId = target ? target.id : '';
+      } else { $('btnInfect').classList.add('hidden'); }
+      // 생존 타이머 배너
+      resolveZombieEnd();
+      const left = Math.max(0, Math.ceil(((S.roomData.zEndAt||0)-now)/1000));
+      const humans = Object.keys(S.roomData.players||{}).filter(id=>!isZombie(id)).length;
+      $('sabotageBanner').classList.remove('hidden');
+      $('sabotageBanner').style.background = meZombie ? 'rgba(106,176,76,0.92)' : 'rgba(255,40,70,0.92)';
+      $('sabotageBanner').innerHTML = meZombie
+        ? ('🧟 사람들을 감염시켜! · 남은 인간 '+humans+'명 · '+left+'초')
+        : ('🏃 도망쳐! · 남은 인간 '+humans+'명 · '+left+'초 버티면 승리!');
+      return;
+    }
+    $('btnInfect').classList.add('hidden');
+    $('sabotageBanner').style.background = '';
+
     // 투명화/변신 자동 종료
     if(S.invisible && now > (S.invisUntil||0)) S.invisible = false;
     if(S.disguiseId && now > (S.disguiseUntil||0)) S.disguiseId = null;
@@ -2646,6 +2778,7 @@
     btnMeeting.textContent = critBlock ? '🚨 위급!' : (cdMs > 0 ? ('🚨 '+Math.ceil(cdMs/1000)+'초') : '🚨 긴급회의');
 
     // task progress bar (정체불명 미션은 빠짐 → 혼자 테스트면 셀 미션이 없음)
+    $('taskBar').classList.remove('hidden');
     const pr = taskProgress();
     const pct = pr.total > 0 ? Math.round(pr.done/pr.total*100) : 0;
     $('taskBarFill').style.width = pct + '%';
@@ -4061,7 +4194,7 @@
   }
 
   function maybeShowResultThenReturn(){ showResultOverlay(()=>{ setView('playing'); SFX.bgmSetMood('play'); }); }
-  function maybeShowResultThenEnd(){ showResultOverlay(()=>{ enterEnded(); }); }
+  function maybeShowResultThenEnd(){ if(gameMode()==='zombie'){ enterEnded(); return; } showResultOverlay(()=>{ enterEnded(); }); }
 
   function showResultOverlay(after){
     const le = S.roomData.lastEjected;
@@ -4140,8 +4273,11 @@
     SFX.win();
     const banner = $('endBanner');
     const winner = S.roomData.winner;
-    banner.className = 'banner ' + (winner==='crew' ? 'crew' : 'impostor');
-    banner.textContent = winner==='crew' ? '🎉 승무원 승리!' : '😈 정체불명 승리!';
+    const crewSide = (winner==='crew' || winner==='human');
+    banner.className = 'banner ' + (crewSide ? 'crew' : 'impostor');
+    if(winner==='human') banner.textContent = '🏃 인간 승리!';
+    else if(winner==='zombie') banner.textContent = '🧟 좀비 승리!';
+    else banner.textContent = winner==='crew' ? '🎉 승무원 승리!' : '😈 정체불명 승리!';
     $('endSub').textContent = S.roomData.winReason || (winner==='crew' ? '모든 정체불명을 찾아냈어요.' : '정체불명이 승무원 수를 따라잡았어요.');
 
     const hostControls = $('endHostControls');
@@ -4166,7 +4302,11 @@
     updates['meeting'] = null;
     updates['lastEjected'] = null;
     updates['winner'] = null;
+    updates['winReason'] = null;
     updates['pos'] = null;
+    updates['sabotage'] = null;
+    updates['zombieMap'] = null;   // 좀비 게임 흔적 지우기
+    updates['zEndAt'] = null;
     for(const id in S.roomData.players){
       updates['players/'+id+'/alive'] = true;
       updates['players/'+id+'/bodyX'] = null;
@@ -4267,8 +4407,9 @@
   $('btnSettings').addEventListener('click', openSettings);
   $('btnSettingsClose').addEventListener('click', closeSettings);
   document.querySelectorAll('.imp-opt').forEach(b=> b.addEventListener('click', ()=> setImpCount(parseInt(b.dataset.n))));
-  document.querySelectorAll('.set-opt').forEach(b=> b.addEventListener('click', ()=> setSetting(b.dataset.set, parseFloat(b.dataset.v))));
+  document.querySelectorAll('.set-opt').forEach(b=> b.addEventListener('click', ()=> setSetting(b.dataset.set, b.dataset.mode!=null ? b.dataset.mode : parseFloat(b.dataset.v))));
   $('btnKill').addEventListener('click', doKill);
+  $('btnInfect').addEventListener('click', doInfect);
   $('btnMeeting').addEventListener('click', callMeeting);
   $('btnReport').addEventListener('click', doReport);
   $('btnVent').addEventListener('click', enterVent);
