@@ -277,6 +277,7 @@
   .mg-card{ position:absolute; left:0; top:9px; width:84px; height:54px; border-radius:9px; background:linear-gradient(135deg,#ffce45,#ff9a4d); color:#3a2c02; display:flex; align-items:center; justify-content:center; font-family:'Jua',sans-serif; font-size:15px; cursor:grab; user-select:none; -webkit-user-select:none; touch-action:none; box-shadow:0 4px 10px rgba(0,0,0,0.4); }
 
   .action-btn.cctv{ background: var(--cyan); color:#04262e; }
+  .action-btn.admin{ background:#7fd4ff; color:#04262e; }
   .action-btn.vent{ background:#3a4170; color:var(--text); border:1px solid var(--line); }
   .imp-opt.sel{ background: var(--accent); color:#3a2c02; border-color: var(--accent); }
   .action-btn.sabotage{ background:#ff3b6b; color:#fff; }
@@ -602,6 +603,7 @@
       <button class="action-btn shift hidden" id="btnShift">🎭 변신</button>
       <button class="action-btn vent hidden" id="btnVent">🕳 벤트</button>
       <button class="action-btn cctv hidden" id="btnCctv">📹 CCTV</button>
+      <button class="action-btn admin hidden" id="btnAdmin">🗺 지도</button>
       <button class="action-btn task hidden" id="btnTask">🛠 미션</button>
       <button class="action-btn kill hidden" id="btnKill">🔪 제거하기</button>
       <button class="action-btn meeting" id="btnMeeting">🚨 긴급회의</button>
@@ -659,6 +661,19 @@
       </div>
       <div id="fixSwitches" style="display:flex;gap:12px;justify-content:center;margin:20px 0 6px;flex-wrap:wrap;"></div>
       <button class="btn btn-ghost btn-small" id="btnFixClose" style="width:100%;margin-top:12px;">닫기</button>
+    </div>
+  </div>
+
+  <!-- 관리실 지도 OVERLAY -->
+  <div id="overlayAdmin" class="overlay hidden">
+    <div class="meeting-panel" style="width:min(96vw,620px);">
+      <div class="meeting-header">
+        <p class="eyebrow">관리실</p>
+        <h2 style="margin:2px 0;font-size:20px;">🗺 지도 — 방마다 몇 명?</h2>
+        <p class="subtitle" style="margin:4px 0 0;">숫자는 그 방에 있는 사람 수야 (누군지는 몰라)</p>
+      </div>
+      <canvas id="adminCanvas" style="width:100%;display:block;border-radius:12px;border:1px solid var(--line);background:#070a16;"></canvas>
+      <button class="btn btn-ghost btn-small" id="btnAdminClose" style="width:100%;margin-top:12px;">닫기</button>
     </div>
   </div>
 
@@ -885,6 +900,7 @@
   }
   // 컴퓨터(모니터)가 있는 방에서 CCTV 사용 가능
   const CCTV_ROOMS = ['보안실','항법실','관리실','통신실'];
+  const ADMIN_ROOMS = ['관리실'];   // 관리실에서 지도(방마다 인원수)를 볼 수 있음
   // 환풍구(벤트) — 임포스터 전용 순간이동, 모두 연결됨
   const VENT_ROOMS = ['무기고','전기실','원자로','항법실','통신실','의무실'];
   const VENT_RANGE = 58;
@@ -1190,6 +1206,7 @@
     $('overlayEnd').classList.toggle('hidden', v!=='ended');
     if(v!=='playing' && S.missionOpen) closeMission();
     if(v!=='playing' && S.cctvOpen) closeCctv();
+    if(v!=='playing' && S.adminOpen) closeAdmin();
     if(v!=='playing' && S.fixOpen) closeFix();
     if(v!=='playing' && S.sabMenuOpen) closeSabMenu();
     if(v!=='playing') $('sabotageBanner').classList.add('hidden');
@@ -2245,6 +2262,7 @@
     if(S.view !== 'playing' || !S.roomData){
       btnKill.classList.add('hidden'); btnTask.classList.add('hidden'); btnCctv.classList.add('hidden'); btnReport.classList.add('hidden'); btnVent.classList.add('hidden'); btnInvis.classList.add('hidden'); btnShift.classList.add('hidden');
       $('btnSabotage').classList.add('hidden'); $('btnFix').classList.add('hidden'); $('sabotageBanner').classList.add('hidden');
+      $('btnAdmin').classList.add('hidden');
       return;
     }
     const me = S.roomData.players[S.myId];
@@ -2286,6 +2304,10 @@
     const rm = roomAt(S.myPos.x, S.myPos.y);
     const canCctv = myAlive && !S.missionOpen && rm && CCTV_ROOMS.includes(rm.name);
     btnCctv.classList.toggle('hidden', !canCctv);
+
+    // 관리실 지도 버튼 (관리실 안에 있을 때)
+    const canAdmin = myAlive && !S.missionOpen && rm && ADMIN_ROOMS.includes(rm.name);
+    $('btnAdmin').classList.toggle('hidden', !canAdmin);
 
     // 시체 신고 버튼 (근처에 신고 안 된 시체가 있을 때)
     const bodyId = (myAlive && !S.missionOpen) ? nearestBody() : null;
@@ -3389,6 +3411,71 @@
     if(cctvRAF){ cancelAnimationFrame(cctvRAF); cctvRAF = null; }
     $('overlayCctv').classList.add('hidden');
   }
+
+  // ============================================================
+  // 🗺 관리실 지도 — 방마다 몇 명 있는지 (누군지는 안 보임)
+  // ============================================================
+  let adminRAF = null;
+  const adminCanvas = $('adminCanvas');
+  const adminCtx = adminCanvas.getContext('2d');
+  function openAdmin(){
+    S.adminOpen = true;
+    $('overlayAdmin').classList.remove('hidden');
+    const cssW = Math.min(580, window.innerWidth*0.9);
+    const cssH = cssW * (MAP_H/MAP_W);
+    adminCanvas.style.height = cssH + 'px';
+    adminCanvas.width = cssW * devicePixelRatio;
+    adminCanvas.height = cssH * devicePixelRatio;
+    if(adminRAF) cancelAnimationFrame(adminRAF);
+    const loop = ()=>{ if(!S.adminOpen){ adminRAF=null; return; } drawAdmin(); adminRAF = requestAnimationFrame(loop); };
+    adminRAF = requestAnimationFrame(loop);
+  }
+  function closeAdmin(){
+    S.adminOpen = false;
+    if(adminRAF){ cancelAnimationFrame(adminRAF); adminRAF = null; }
+    $('overlayAdmin').classList.add('hidden');
+  }
+  function drawAdmin(){
+    const w = adminCanvas.width, h = adminCanvas.height;
+    const sx = w/MAP_W, sy = h/MAP_H;
+    adminCtx.clearRect(0,0,w,h);
+    adminCtx.fillStyle = '#070a16'; adminCtx.fillRect(0,0,w,h);
+    // 방마다 살아있는 사람 수 세기
+    const counts = {};
+    const players = (S.roomData && S.roomData.players) || {};
+    for(const id in players){
+      const p = players[id];
+      if(!p.alive) continue;                       // 유령은 지도에 안 나옴
+      let pos = (id===S.myId) ? S.myPos : S.positions[id];
+      if(!pos) continue;
+      if(id!==S.myId && S.positions[id] && S.positions[id].hidden) continue; // 벤트 숨은 사람 제외
+      const rm = roomAt(pos.x, pos.y);
+      if(rm) counts[rm.name] = (counts[rm.name]||0) + 1;
+    }
+    // 방 그리기 + 인원수
+    for(const r of ROOMS){
+      const x=r.x*sx, y=r.y*sy, rw=r.w*sx, rh=r.h*sy;
+      const c = counts[r.name] || 0;
+      adminCtx.fillStyle = c>0 ? 'rgba(92,225,255,0.18)' : 'rgba(40,48,100,0.35)';
+      adminCtx.strokeStyle = '#39427e'; adminCtx.lineWidth = 2;
+      roundRectC(adminCtx, x+2, y+2, rw-4, rh-4, 8*sx); adminCtx.fill(); adminCtx.stroke();
+      // 방 이름 (방 너비에 맞춰 읽기 좋은 크기로)
+      adminCtx.fillStyle = '#aeb6e0';
+      const nameFont = Math.max(10, Math.min(rw*0.17, rh*0.28));
+      adminCtx.font = '600 '+nameFont+'px sans-serif'; adminCtx.textAlign='center';
+      adminCtx.fillText(r.name, x+rw/2, y+nameFont*1.4);
+      // 인원수 점들
+      if(c>0){
+        adminCtx.fillStyle = '#5ce1ff';
+        adminCtx.beginPath();
+        adminCtx.arc(x+rw/2, y+rh/2, Math.min(rw,rh)*0.16, 0, Math.PI*2); adminCtx.fill();
+        adminCtx.fillStyle = '#04262e'; adminCtx.font = 'bold '+(Math.min(rw,rh)*0.22)+'px sans-serif';
+        adminCtx.textBaseline='middle'; adminCtx.fillText(String(c), x+rw/2, y+rh/2+1);
+        adminCtx.textBaseline='alphabetic';
+      }
+    }
+  }
+  function roundRectC(ctx,x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
   // 카메라가 설치된 방만 (전체 맵을 다 보여주지 않음)
   const CAMERAS = ['식당','원자로','전기실','항법실'];
   function drawCctv(){
@@ -3877,6 +3964,8 @@
   $('btnMissionClose').addEventListener('click', closeMission);
   $('btnCctv').addEventListener('click', openCctv);
   $('btnCctvClose').addEventListener('click', closeCctv);
+  $('btnAdmin').addEventListener('click', openAdmin);
+  $('btnAdminClose').addEventListener('click', closeAdmin);
   $('btnCopyInvite').addEventListener('click', copyInviteLink);
   $('btnLeaveLobby').addEventListener('click', leaveRoom);
   $('btnEndLeave').addEventListener('click', leaveRoom);
