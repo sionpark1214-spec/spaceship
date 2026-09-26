@@ -297,6 +297,13 @@
     position:absolute; left:5px; right:5px; height:38px; border-radius:8px; bottom:5px;
     background:#5a648f; transition:bottom .18s cubic-bezier(.3,1.4,.5,1), background .18s;
   }
+  .sab-opt{ display:flex; align-items:center; gap:10px; width:100%; justify-content:flex-start;
+    background:#242b57; color:var(--text); border:1px solid var(--line); font-weight:700; font-size:15px; padding:12px 14px; }
+  .sab-opt.crit{ background:#3a1622; border-color:#a03050; }
+  .sab-opt .sab-ic{ font-size:20px; }
+  .sab-opt .sab-tag{ margin-left:auto; font-size:11px; font-weight:800; opacity:0.8; background:rgba(0,0,0,0.3); padding:3px 8px; border-radius:10px; }
+  .sab-opt.crit .sab-tag{ color:#ff9db3; }
+  .sab-opt:disabled{ opacity:0.4; }
   .fix-switch.on{ background:#123a2a; border-color:var(--success); }
   .fix-switch.on .knob{ bottom:calc(100% - 43px); background:var(--success); box-shadow:0 0 12px rgba(72,230,160,0.7); }
   .action-btn.shift{ background:#b98bff; color:#20103a; }
@@ -624,6 +631,19 @@
       </div>
       <div id="shiftList"></div>
       <button class="btn btn-ghost btn-small" id="btnShiftCancel" style="width:100%;margin-top:12px;">취소</button>
+    </div>
+  </div>
+
+  <!-- 사보타주 선택 OVERLAY (정체불명) -->
+  <div id="overlaySab" class="overlay hidden">
+    <div class="meeting-panel" style="width:min(92vw,400px);">
+      <div class="meeting-header">
+        <p class="eyebrow">😈 정체불명</p>
+        <h2 style="margin:2px 0;font-size:20px;">⚡ 방해공작</h2>
+        <p class="subtitle" id="sabHint" style="margin:4px 0 0;">터뜨릴 방해공작을 골라!</p>
+      </div>
+      <div id="sabMenu" style="display:flex;flex-direction:column;gap:8px;margin:14px 0 6px;"></div>
+      <button class="btn btn-ghost btn-small" id="btnSabCancel" style="width:100%;margin-top:10px;">취소</button>
     </div>
   </div>
 
@@ -1169,6 +1189,7 @@
     if(v!=='playing' && S.missionOpen) closeMission();
     if(v!=='playing' && S.cctvOpen) closeCctv();
     if(v!=='playing' && S.fixOpen) closeFix();
+    if(v!=='playing' && S.sabMenuOpen) closeSabMenu();
     if(v!=='playing') $('sabotageBanner').classList.add('hidden');
     if(v!=='playing' && S.vented) exitVent();
     if(v!=='playing') $('overlayRole').classList.add('hidden');
@@ -1309,6 +1330,7 @@
     updates['meeting'] = null;
     updates['lastEjected'] = null;
     updates['winner'] = null;
+    updates['winReason'] = null;
     updates['pos'] = null;
     updates['nextMeetingAt'] = 0;
     updates['sabotage'] = null;
@@ -1388,6 +1410,8 @@
     S.missionOpen = false;
     S.cctvOpen = false;
     S.fixOpen = false;
+    S.sabMenuOpen = false;
+    S._endingSab = false;
     S.vented = false;
     S.invisible = false; S.invisUntil = 0; S.invisCdUntil = 0;
     S.disguiseId = null; S.disguiseUntil = 0; S.shiftCdUntil = 0; S.shiftPendingId = null; S.shiftReadyAt = 0;
@@ -1731,21 +1755,30 @@
 
     mctx.restore();
 
-    // ⚡ 정전(불 끄기) — 화면 어둡게, 내 주위만 조금 보임
+    // 사보타주 화면 효과
     const sab = S.roomData && S.roomData.sabotage;
     const meAlive2 = S.roomData && S.roomData.players[S.myId] && S.roomData.players[S.myId].alive;
-    if(sab && sab.type==='lights' && meAlive2 && S.roomData.status==='playing'){
-      const sx = (S.myPos.x - S.cam.x)*scale + w/2;
-      const sy = (S.myPos.y - S.cam.y)*scale + h/2;
-      const imp = isImpostor(S.myId);
-      const vr = (imp ? 330 : 150) * scale;   // 정체불명은 좀 더 잘 봄
-      const g = mctx.createRadialGradient(sx,sy, vr*0.4, sx,sy, vr);
-      g.addColorStop(0, 'rgba(3,4,12,0)');
-      g.addColorStop(0.72, 'rgba(3,4,12,0.85)');
-      g.addColorStop(1, 'rgba(1,2,6,0.97)');
-      mctx.save();
-      mctx.fillStyle = g; mctx.fillRect(0,0,w,h);
-      mctx.restore();
+    if(sab && meAlive2 && S.roomData.status==='playing'){
+      const cfg = SABOTAGES[sab.type];
+      if(sab.type==='lights'){
+        // ⚡ 정전 — 화면 어둡게, 내 주위만 조금 보임
+        const sx = (S.myPos.x - S.cam.x)*scale + w/2;
+        const sy = (S.myPos.y - S.cam.y)*scale + h/2;
+        const imp = isImpostor(S.myId);
+        const vr = (imp ? 330 : 150) * scale;
+        const g = mctx.createRadialGradient(sx,sy, vr*0.4, sx,sy, vr);
+        g.addColorStop(0, 'rgba(3,4,12,0)');
+        g.addColorStop(0.72, 'rgba(3,4,12,0.85)');
+        g.addColorStop(1, 'rgba(1,2,6,0.97)');
+        mctx.save(); mctx.fillStyle = g; mctx.fillRect(0,0,w,h); mctx.restore();
+      } else if(cfg && cfg.critical){
+        // 위급 — 빨간 경고 테두리 (깜빡깜빡)
+        const pulse = 0.35 + 0.35*Math.abs(Math.sin(performance.now()/280));
+        const g = mctx.createRadialGradient(w/2,h/2, Math.min(w,h)*0.35, w/2,h/2, Math.max(w,h)*0.62);
+        g.addColorStop(0, 'rgba(255,30,60,0)');
+        g.addColorStop(1, 'rgba(255,20,50,'+pulse+')');
+        mctx.save(); mctx.fillStyle = g; mctx.fillRect(0,0,w,h); mctx.restore();
+      }
     }
   }
 
@@ -2252,23 +2285,42 @@
     if(bodyId){ btnReport.classList.remove('hidden'); btnReport.dataset.bodyId = bodyId; }
     else { btnReport.classList.add('hidden'); }
 
-    // ⚡ 사보타주 버튼 (정체불명 전용) / 💡 불 켜기 버튼 (정전 중 전기실)
+    // ⚡ 사보타주 버튼 (정체불명 전용) / 🔧 고치기 버튼 (사보타주 중 해당 방)
     const btnSabotage = $('btnSabotage'), btnFix = $('btnFix');
-    const sabActive = !!(S.roomData.sabotage && S.roomData.sabotage.type==='lights');
+    const sab = S.roomData.sabotage;
+    const sabActive = !!sab;
+    const sabC = sab ? sabCfg(sab.type) : null;
+    // 위급 사보타주 제한시간 처리
+    resolveCriticalTimeout();
+    if(!sabActive) S._endingSab = false;
     if(role==='impostor' && myAlive && !S.missionOpen && !S.vented && !sabActive){
       const scd = (S.roomData.nextSabotageAt||0) - now;
       btnSabotage.classList.remove('hidden');
       btnSabotage.disabled = scd > 0;
       btnSabotage.textContent = scd > 0 ? ('⚡ '+Math.ceil(scd/1000)+'초') : '⚡ 사보타주';
     } else { btnSabotage.classList.add('hidden'); }
-    const inElec = rm && rm.name==='전기실';
-    if(sabActive && myAlive && inElec && !S.missionOpen && !S.vented){
+    // 고치기 버튼: 사보타주가 필요로 하는 방 안에 있고, 그 방이 아직 안 고쳐졌을 때
+    const roomFixed = sab && sab.fix && rm && sab.fix[rm.name];
+    const roomNeeded = sabActive && rm && sabC.rooms.includes(rm.name) && !roomFixed;
+    if(roomNeeded && myAlive && !S.missionOpen && !S.vented){
       btnFix.classList.remove('hidden');
-    } else { btnFix.classList.add('hidden'); if(S.fixOpen && !sabActive) closeFix(); }
-    // 정전 경고 배너
-    $('sabotageBanner').classList.toggle('hidden', !(sabActive && myAlive));
-    // 고치기 창 열려 있으면 실시간 갱신
-    if(S.fixOpen){ if(sabActive) renderFix(); else closeFix(); }
+      btnFix.textContent = sabC.fix;
+    } else { btnFix.classList.add('hidden'); if(S.fixOpen && (!sabActive || sab.type!=='lights')) closeFix(); }
+    // 사보타주 경고 배너 (위급이면 카운트다운)
+    if(sabActive && myAlive){
+      $('sabotageBanner').classList.remove('hidden');
+      if(sabC.critical){
+        const left = Math.max(0, Math.ceil(((sab.deadline||0)-now)/1000));
+        const need = sabC.rooms.filter(r=> !(sab.fix&&sab.fix[r]));
+        $('sabotageBanner').innerHTML = sabC.icon+' <b>'+sabC.name+'</b>까지 '+left+'초! → '+need.join(', ')+'(으)로!';
+      } else {
+        $('sabotageBanner').innerHTML = sabC.icon+' 정전! <b>전기실</b>로 가서 불을 켜세요';
+      }
+    } else { $('sabotageBanner').classList.add('hidden'); }
+    // 정전 스위치 창 열려 있으면 실시간 갱신
+    if(S.fixOpen){ if(sabActive && sab.type==='lights') renderFix(); else closeFix(); }
+    // 정체불명 메뉴 열려 있으면 쿨타임 갱신
+    if(S.sabMenuOpen){ if(sabActive) closeSabMenu(); else renderSabMenu(); }
 
     // 벤트 버튼 (임포스터 또는 기술자가 환풍구 위에 있을 때)
     const canVent = (role==='impostor' || myRoleSpecial==='engineer');
@@ -2295,11 +2347,12 @@
       else { btnShift.disabled = false; btnShift.textContent = '🎭 변신'; }
     } else { btnShift.classList.add('hidden'); }
 
-    // meeting button (shared cooldown countdown)
+    // meeting button (shared cooldown countdown) — 위급 사보타주 중엔 회의 불가
     const nextAt = S.roomData.nextMeetingAt || 0;
     const cdMs = nextAt - now;
-    btnMeeting.disabled = !myAlive || cdMs > 0 || S.roomData.status !== 'playing';
-    btnMeeting.textContent = cdMs > 0 ? ('🚨 '+Math.ceil(cdMs/1000)+'초') : '🚨 긴급회의';
+    const critBlock = sabActive && sabC.critical;
+    btnMeeting.disabled = !myAlive || cdMs > 0 || S.roomData.status !== 'playing' || critBlock;
+    btnMeeting.textContent = critBlock ? '🚨 위급!' : (cdMs > 0 ? ('🚨 '+Math.ceil(cdMs/1000)+'초') : '🚨 긴급회의');
 
     // task progress bar
     const pr = taskProgress();
@@ -3058,33 +3111,82 @@
   function cancelShift(){ $('overlayShift').classList.add('hidden'); }
 
   // ============================================================
-  // ⚡ 정전 사보타주 (불 끄기) — 정체불명이 불을 끄면 화면이 캄캄해짐
+  // ⚡ 사보타주 — 정체불명이 방해공작을 함
+  //   정전: 화면이 캄캄해짐 (위급하지 않음)
+  //   위급(critical): 제한시간 안에 못 고치면 정체불명 승리!
   // ============================================================
   const SAB_CD = 25000;        // 사보타주 재사용 쿨타임
   const NUM_SWITCHES = 5;      // 불 켜는 데 필요한 스위치 수
-  async function doSabotage(){
+  const SABOTAGES = {
+    lights:  { icon:'💡', name:'정전',           critical:false, rooms:['전기실'],          fix:'💡 불 켜기' },
+    reactor: { icon:'☢️', name:'원자로 폭발',    critical:true, dur:30000, rooms:['원자로'],          fix:'☢️ 진정시키기' },
+    oxygen:  { icon:'🫧', name:'산소 공급 실패',  critical:true, dur:32000, rooms:['산소실','관리실'], fix:'🫧 산소 복구' },
+    engine:  { icon:'🔥', name:'엔진 폭발',       critical:true, dur:28000, rooms:['엔진실'],          fix:'🔥 엔진 진화' },
+    meteor:  { icon:'☄️', name:'운석 충돌',       critical:true, dur:28000, rooms:['무기고'],          fix:'☄️ 운석 요격' },
+    garden:  { icon:'🌱', name:'식물 물 부족',    critical:true, dur:34000, rooms:['정원'],            fix:'🌱 물 주기' },
+  };
+  function sabCfg(t){ return SABOTAGES[t] || SABOTAGES.lights; }
+  function sabAllFixed(sab){
+    if(!sab) return true;
+    const cfg = sabCfg(sab.type); const fx = sab.fix || {};
+    return cfg.rooms.every(r => fx[r]);
+  }
+
+  // 정체불명: 사보타주 메뉴 열기
+  function doSabotage(){
     if(!S.roomData || S.roomData.status!=='playing') return;
     if(!isImpostor(S.myId)) return;
-    if(S.roomData.sabotage) return;                       // 이미 정전 중
-    if(Date.now() < (S.roomData.nextSabotageAt||0)) return;
-    try{
-      await roomRef('').update({
-        sabotage: { type:'lights', at: Date.now(), sw: null },
-        nextSabotageAt: Date.now() + SAB_CD
-      });
-    }catch(e){}
+    if(S.roomData.sabotage) return;                       // 이미 진행 중
+    S.sabMenuOpen = true;
+    renderSabMenu();
+    $('overlaySab').classList.remove('hidden');
   }
+  function closeSabMenu(){ S.sabMenuOpen = false; $('overlaySab').classList.add('hidden'); }
+  function renderSabMenu(){
+    const wrap = $('sabMenu'); if(!wrap) return;
+    const onCd = Date.now() < (S.roomData.nextSabotageAt||0);
+    const cdLeft = Math.ceil(((S.roomData.nextSabotageAt||0) - Date.now())/1000);
+    wrap.innerHTML = '';
+    for(const type in SABOTAGES){
+      const c = SABOTAGES[type];
+      const btn = document.createElement('button');
+      btn.className = 'btn sab-opt' + (c.critical?' crit':'');
+      btn.innerHTML = '<span class="sab-ic">'+c.icon+'</span> '+c.name +
+        (c.critical?'<span class="sab-tag">위급 · '+Math.round(c.dur/1000)+'초</span>':'<span class="sab-tag">방해</span>');
+      btn.disabled = onCd;
+      btn.addEventListener('click', ()=> castSabotage(type));
+      wrap.appendChild(btn);
+    }
+    $('sabHint').textContent = onCd ? ('재사용까지 '+cdLeft+'초') : '터뜨릴 방해공작을 골라!';
+  }
+  async function castSabotage(type){
+    if(!S.roomData || S.roomData.status!=='playing' || S.roomData.sabotage) return;
+    if(Date.now() < (S.roomData.nextSabotageAt||0)) return;
+    const c = sabCfg(type);
+    const sab = { type, at: Date.now(), fix: null };
+    if(type==='lights') sab.sw = null;
+    if(c.critical) sab.deadline = Date.now() + c.dur;
+    try{
+      await roomRef('').update({ sabotage: sab, nextSabotageAt: Date.now() + SAB_CD });
+    }catch(e){}
+    closeSabMenu();
+  }
+
+  // 고치기 버튼: 정전이면 스위치 창, 위급이면 현재 방 즉시 복구
   function openFix(){
-    if(!S.roomData || !S.roomData.sabotage) return;
-    S.fixOpen = true;
-    renderFix();
-    $('overlayFix').classList.remove('hidden');
+    const sab = S.roomData && S.roomData.sabotage; if(!sab) return;
+    if(sab.type==='lights'){
+      S.fixOpen = true; renderFix(); $('overlayFix').classList.remove('hidden');
+    } else {
+      const rm = roomAt(S.myPos.x, S.myPos.y);
+      if(rm) fixCriticalRoom(sab.type, rm.name);
+    }
   }
   function closeFix(){ S.fixOpen = false; $('overlayFix').classList.add('hidden'); }
   function renderFix(){
     const sab = S.roomData && S.roomData.sabotage;
     const wrap = $('fixSwitches'); if(!wrap) return;
-    if(!sab){ closeFix(); return; }
+    if(!sab || sab.type!=='lights'){ closeFix(); return; }
     const sw = sab.sw || {};
     wrap.innerHTML = '';
     for(let i=0;i<NUM_SWITCHES;i++){
@@ -3101,13 +3203,32 @@
     const sw = { ...(sab.sw||{}) }; sw[i] = true;
     const count = Object.keys(sw).filter(k=>sw[k]).length;
     try{
-      if(count >= NUM_SWITCHES){
-        await roomRef('sabotage').remove();   // 전력 복구! 불 켜짐
-        closeFix();
-      } else {
-        await roomRef('sabotage/sw/'+i).set(true);
-      }
+      if(count >= NUM_SWITCHES){ await roomRef('sabotage').remove(); closeFix(); }
+      else { await roomRef('sabotage/sw/'+i).set(true); }
     }catch(e){}
+  }
+  // 위급 사보타주: 방 하나 복구. 필요한 방 다 복구되면 사보타주 해제
+  async function fixCriticalRoom(type, roomName){
+    const sab = S.roomData && S.roomData.sabotage; if(!sab || sab.type!==type) return;
+    const cfg = sabCfg(type);
+    if(!cfg.rooms.includes(roomName)) return;
+    const fx = { ...(sab.fix||{}) }; fx[roomName] = true;
+    const done = cfg.rooms.every(r => fx[r]);
+    try{
+      if(done){ await roomRef('sabotage').remove(); }   // 위기 해제!
+      else { await roomRef('sabotage/fix/'+roomName).set(true); }
+    }catch(e){}
+  }
+  // 위급 사보타주 제한시간 초과 → 정체불명 승리
+  function resolveCriticalTimeout(){
+    const sab = S.roomData && S.roomData.sabotage;
+    if(!sab || !sabCfg(sab.type).critical) { S._endingSab = false; return; }
+    if(S.roomData.status !== 'playing') return;
+    if(Date.now() <= (sab.deadline||0)) return;
+    if(S._endingSab) return;
+    S._endingSab = true;
+    const cfg = sabCfg(sab.type);
+    try{ roomRef('').update({ status:'ended', winner:'impostor', sabotage:null, winReason: '💥 '+cfg.icon+' '+cfg.name+'! 제때 못 고쳤어요.' }); }catch(e){}
   }
 
   // ============================================================
@@ -3480,7 +3601,7 @@
     const winner = S.roomData.winner;
     banner.className = 'banner ' + (winner==='crew' ? 'crew' : 'impostor');
     banner.textContent = winner==='crew' ? '🎉 승무원 승리!' : '😈 정체불명 승리!';
-    $('endSub').textContent = winner==='crew' ? '모든 정체불명을 찾아냈어요.' : '정체불명이 승무원 수를 따라잡았어요.';
+    $('endSub').textContent = S.roomData.winReason || (winner==='crew' ? '모든 정체불명을 찾아냈어요.' : '정체불명이 승무원 수를 따라잡았어요.');
 
     const hostControls = $('endHostControls');
     hostControls.innerHTML = '';
@@ -3613,6 +3734,7 @@
   $('btnShift').addEventListener('click', openShift);
   $('btnShiftCancel').addEventListener('click', cancelShift);
   $('btnSabotage').addEventListener('click', doSabotage);
+  $('btnSabCancel').addEventListener('click', closeSabMenu);
   $('btnFix').addEventListener('click', openFix);
   $('btnFixClose').addEventListener('click', closeFix);
   $('chatSend').addEventListener('click', sendChat);
