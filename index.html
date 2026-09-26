@@ -293,6 +293,8 @@
     width:52px; height:92px; border-radius:12px; background:#20264f; border:2px solid var(--line);
     position:relative; cursor:pointer; transition:background .15s;
   }
+  .fix-switch .sw-num{ position:absolute; top:3px; left:0; right:0; text-align:center; font-size:12px; font-weight:800; color:var(--text-dim); z-index:1; }
+  .fix-switch.on .sw-num{ color:#3a2c02; }
   .fix-switch .knob{
     position:absolute; left:5px; right:5px; height:38px; border-radius:8px; bottom:5px;
     background:#5a648f; transition:bottom .18s cubic-bezier(.3,1.4,.5,1), background .18s;
@@ -651,11 +653,11 @@
   <div id="overlayFix" class="overlay hidden">
     <div class="meeting-panel" style="width:min(92vw,420px);">
       <div class="meeting-header">
-        <p class="eyebrow">⚡ 전력 복구</p>
-        <h2 style="margin:2px 0;font-size:20px;">💡 불 켜기</h2>
-        <p class="subtitle" style="margin:4px 0 0;">스위치를 전부 <b>위로</b> 올리면 불이 켜져요</p>
+        <p class="eyebrow" id="fixEyebrow">⚡ 전력 복구</p>
+        <h2 id="fixTitle" style="margin:2px 0;font-size:20px;">💡 불 켜기</h2>
+        <p class="subtitle" id="fixSub" style="margin:4px 0 0;">스위치를 <b>번호 순서대로</b> 올려! (틀리면 처음부터)</p>
       </div>
-      <div id="fixSwitches" style="display:flex;gap:12px;justify-content:center;margin:20px 0 6px;"></div>
+      <div id="fixSwitches" style="display:flex;gap:12px;justify-content:center;margin:20px 0 6px;flex-wrap:wrap;"></div>
       <button class="btn btn-ghost btn-small" id="btnFixClose" style="width:100%;margin-top:12px;">닫기</button>
     </div>
   </div>
@@ -1363,8 +1365,9 @@
     const players = S.roomData.players || {};
     const imp = S.roomData.impostorMap || {};
     let done = 0, total = 0;
+    const solo = isSoloTest();  // 혼자 테스트일 땐 내(임포스터) 미션도 진행도에 셈
     for(const id in players){
-      if(imp[id]) continue;
+      if(imp[id] && !solo) continue;
       const t = players[id].tasks || {};
       const keys = Object.keys(t);
       total += keys.length;
@@ -2324,8 +2327,8 @@
         $('sabotageBanner').innerHTML = sabC.icon+' 정전! <b>전기실</b>로 가서 불을 켜세요';
       }
     } else { $('sabotageBanner').classList.add('hidden'); }
-    // 정전 스위치 창 열려 있으면 실시간 갱신
-    if(S.fixOpen){ if(sabActive && sab.type==='lights') renderFix(); else closeFix(); }
+    // 고치기 창: 사보타주 풀리면 닫고, 정전이면 스위치 상태 갱신 (수리창은 그대로 둠)
+    if(S.fixOpen){ if(!sabActive) closeFix(); else if(sab.type==='lights') renderFix(); }
     // 정체불명 메뉴 열려 있으면 쿨타임 갱신
     if(S.sabMenuOpen){ if(sabActive) closeSabMenu(); else renderSabMenu(); }
 
@@ -2621,9 +2624,10 @@
     updates['players/'+S.myId+'/tasks/'+spotId] = true;
     updates['players/'+S.myId+'/tasksDone'] = (me.tasksDone||0) + 1;
     const imp = S.roomData.impostorMap || {};
+    const solo = isSoloTest();
     let done=0, total=0;
     for(const id in players){
-      if(imp[id]) continue;
+      if(imp[id] && !solo) continue;
       const t = players[id].tasks || {}; const ks = Object.keys(t);
       total += ks.length; done += ks.filter(k=>t[k]).length;
     }
@@ -3219,7 +3223,13 @@
     if(used >= myMaxSab()) return;                 // 내 사보타주 횟수 다 씀
     const c = sabCfg(type);
     const sab = { type, at: Date.now(), fix: null };
-    if(type==='lights') sab.sw = null;
+    if(type==='lights'){
+      sab.sw = null;
+      // 스위치를 눌러야 하는 순서를 섞어서 저장 (모두가 같은 순서를 보게)
+      const seq = []; for(let i=0;i<NUM_SWITCHES;i++) seq.push(i);
+      for(let i=seq.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); const t=seq[i]; seq[i]=seq[j]; seq[j]=t; }
+      sab.seq = seq;
+    }
     if(c.critical) sab.deadline = Date.now() + c.dur;
     const cd = isSoloTest() ? 2000 : SAB_CD;   // 혼자 테스트는 쿨타임 짧게
     const updates = { sabotage: sab, nextSabotageAt: Date.now() + cd };
@@ -3228,44 +3238,98 @@
     closeSabMenu();
   }
 
-  // 고치기 버튼: 정전이면 스위치 창, 위급이면 현재 방 즉시 복구
+  // 고치기 버튼: 정전이면 순서대로 스위치, 위급이면 꾹 눌러서 수리 미니게임
   function openFix(){
     const sab = S.roomData && S.roomData.sabotage; if(!sab) return;
     if(sab.type==='lights'){
-      S.fixOpen = true; renderFix(); $('overlayFix').classList.remove('hidden');
+      S.fixOpen = true; S.fixMode = 'lights';
+      $('fixEyebrow').textContent = '⚡ 전력 복구';
+      $('fixTitle').textContent = '💡 불 켜기';
+      $('fixSub').innerHTML = '스위치를 <b>번호 순서대로(1→'+NUM_SWITCHES+')</b> 올려! (틀리면 처음부터)';
+      renderFix(); $('overlayFix').classList.remove('hidden');
     } else {
-      const rm = roomAt(S.myPos.x, S.myPos.y);
-      if(rm) fixCriticalRoom(sab.type, rm.name);
+      const rm = roomAt(S.myPos.x, S.myPos.y); if(!rm) return;
+      const cfg = sabCfg(sab.type);
+      if(!cfg.rooms.includes(rm.name)) return;
+      S.fixOpen = true; S.fixMode = 'repair'; S.fixType = sab.type; S.fixRoom = rm.name;
+      $('fixEyebrow').textContent = cfg.icon + ' 긴급 수리';
+      $('fixTitle').textContent = cfg.fix;
+      $('fixSub').innerHTML = '버튼을 <b>꾹</b> 눌러서 수리 게이지를 끝까지 채워! (떼면 줄어들어)';
+      renderRepair(); $('overlayFix').classList.remove('hidden');
     }
   }
-  function closeFix(){ S.fixOpen = false; $('overlayFix').classList.add('hidden'); }
+  function closeFix(){
+    S.fixOpen = false; S.fixMode = null;
+    if(S._fixCleanup){ try{ S._fixCleanup(); }catch(e){} S._fixCleanup = null; }
+    $('overlayFix').classList.add('hidden');
+  }
+  // 정전: 스위치를 정해진 순서대로 올리기 (틀리면 전부 리셋)
   function renderFix(){
     const sab = S.roomData && S.roomData.sabotage;
     const wrap = $('fixSwitches'); if(!wrap) return;
     if(!sab || sab.type!=='lights'){ closeFix(); return; }
     const sw = sab.sw || {};
+    const seq = sab.seq || (()=>{const a=[];for(let i=0;i<NUM_SWITCHES;i++)a.push(i);return a;})();
     // 스위치는 처음 한 번만 만든다 (매 프레임 새로 만들면 클릭이 씹힘)
     if(wrap.children.length !== NUM_SWITCHES){
       wrap.innerHTML = '';
       for(let i=0;i<NUM_SWITCHES;i++){
         const el = document.createElement('div');
         el.className = 'fix-switch';
-        el.innerHTML = '<div class="knob"></div>';
+        const step = seq.indexOf(i) + 1;   // 이 스위치는 몇 번째로 올려야 하는지
+        el.innerHTML = '<div class="sw-num">'+step+'</div><div class="knob"></div>';
         el.addEventListener('click', ()=> flipSwitch(i));
         wrap.appendChild(el);
       }
     }
-    // 켜짐 상태만 매 프레임 갱신 (다른 사람이 올린 것도 반영)
     [...wrap.children].forEach((el,i)=> el.classList.toggle('on', !!sw[i]));
   }
   async function flipSwitch(i){
-    const sab = S.roomData && S.roomData.sabotage; if(!sab) return;
-    const sw = { ...(sab.sw||{}) }; sw[i] = true;
-    const count = Object.keys(sw).filter(k=>sw[k]).length;
+    const sab = S.roomData && S.roomData.sabotage; if(!sab || sab.type!=='lights') return;
+    const sw = sab.sw || {};
+    const seq = sab.seq || (()=>{const a=[];for(let k=0;k<NUM_SWITCHES;k++)a.push(k);return a;})();
+    const onCount = Object.keys(sw).filter(k=>sw[k]).length;
+    const expected = seq[onCount];        // 지금 눌러야 하는 스위치
     try{
-      if(count >= NUM_SWITCHES){ await roomRef('sabotage').remove(); closeFix(); }
-      else { await roomRef('sabotage/sw/'+i).set(true); }
+      if(i === expected){
+        if(onCount + 1 >= NUM_SWITCHES){ await roomRef('sabotage').remove(); closeFix(); }
+        else { await roomRef('sabotage/sw/'+i).set(true); }
+      } else {
+        // 순서 틀림 → 전부 리셋
+        await roomRef('sabotage/sw').remove();
+      }
     }catch(e){}
+  }
+  // 위급 사보타주: 꾹 눌러서 수리 게이지 채우기 (떼면 감소)
+  function renderRepair(){
+    const wrap = $('fixSwitches'); if(!wrap) return;
+    wrap.innerHTML = '';
+    const track = document.createElement('div'); track.className = 'mg-progress-track'; track.style.width='100%';
+    const fill = document.createElement('div'); fill.className = 'mg-progress-fill'; track.appendChild(fill);
+    const btn = document.createElement('button'); btn.className = 'mg-hold-btn'; btn.textContent = '🔧 꾹 눌러서 수리';
+    wrap.appendChild(track); wrap.appendChild(btn);
+    const DUR = 4000;               // 채우는 데 걸리는 시간
+    let prog = 0, holding = false, raf = null, done = false, last = performance.now();
+    function loop(){
+      const now = performance.now(); const dt = now - last; last = now;
+      prog += holding ? (dt/DUR) : -(dt/(DUR*0.55));   // 떼면 더 빨리 감소
+      prog = Math.max(0, Math.min(1, prog));
+      fill.style.width = (prog*100) + '%';
+      if(prog >= 1 && !done){ done = true; repairComplete(); return; }
+      raf = requestAnimationFrame(loop);
+    }
+    const start = (e)=>{ if(done) return; e.preventDefault(); holding = true; };
+    const stop = ()=>{ holding = false; };
+    btn.addEventListener('mousedown', start); btn.addEventListener('touchstart', start, {passive:false});
+    window.addEventListener('mouseup', stop); window.addEventListener('touchend', stop);
+    raf = requestAnimationFrame(loop);
+    S._fixCleanup = ()=>{ done = true; if(raf) cancelAnimationFrame(raf); window.removeEventListener('mouseup', stop); window.removeEventListener('touchend', stop); };
+  }
+  function repairComplete(){
+    const type = S.fixType, room = S.fixRoom;
+    if(S._fixCleanup){ try{ S._fixCleanup(); }catch(e){} S._fixCleanup = null; }
+    fixCriticalRoom(type, room);
+    closeFix();
   }
   // 위급 사보타주: 방 하나 복구. 필요한 방 다 복구되면 사보타주 해제
   async function fixCriticalRoom(type, roomName){
