@@ -2304,7 +2304,7 @@
       btnSabotage.classList.remove('hidden');
       btnSabotage.disabled = scd > 0 || remain <= 0;
       btnSabotage.textContent = remain <= 0 ? '⚡ 다 씀'
-        : (scd > 0 ? ('⚡ '+Math.ceil(scd/1000)+'초') : ('⚡ 사보타주 ('+remain+')'));
+        : (scd > 0 ? ('⚡ '+Math.ceil(scd/1000)+'초') : (isSoloTest() ? '⚡ 사보타주' : ('⚡ 사보타주 ('+remain+')')));
     } else { btnSabotage.classList.add('hidden'); }
     // 고치기 버튼: 사보타주가 필요로 하는 방 안에 있고, 그 방이 아직 안 고쳐졌을 때
     const roomFixed = sab && sab.fix && rm && sab.fix[rm.name];
@@ -3138,8 +3138,11 @@
     const cfg = sabCfg(sab.type); const fx = sab.fix || {};
     return cfg.rooms.every(r => fx[r]);
   }
+  function isSoloTest(){ return S.roomData && Object.keys(S.roomData.players||{}).length <= 1; }
   // 정체불명 역할별 사보타주 사용 가능 횟수: 투명인간 1, 형상변환자 2, 그냥 정체불명 3
+  //   (혼자 테스트할 땐 마음껏 쓸 수 있게 무제한)
   function maxSabFor(id){
+    if(isSoloTest()) return 99;
     const r = (S.roomData && S.roomData.roleMap && S.roomData.roleMap[id]) || null;
     return r==='phantom' ? 1 : (r==='shapeshifter' ? 2 : 3);
   }
@@ -3181,7 +3184,7 @@
     // 상태만 매 프레임 갱신 (버튼은 그대로 두고)
     [...wrap.children].forEach(btn=>{ btn.disabled = onCd || remain<=0; });
     $('sabHint').textContent = remain<=0 ? '이번 판 사보타주를 다 썼어! 😮'
-      : (onCd ? ('재사용까지 '+cdLeft+'초') : ('방해공작을 골라! (남은 '+remain+'번)'));
+      : (onCd ? ('재사용까지 '+cdLeft+'초') : (isSoloTest() ? '방해공작을 골라!' : ('방해공작을 골라! (남은 '+remain+'번)')));
   }
   async function castSabotage(type){
     if(!S.roomData || S.roomData.status!=='playing' || S.roomData.sabotage) return;
@@ -3193,7 +3196,8 @@
     const sab = { type, at: Date.now(), fix: null };
     if(type==='lights') sab.sw = null;
     if(c.critical) sab.deadline = Date.now() + c.dur;
-    const updates = { sabotage: sab, nextSabotageAt: Date.now() + SAB_CD };
+    const cd = isSoloTest() ? 2000 : SAB_CD;   // 혼자 테스트는 쿨타임 짧게
+    const updates = { sabotage: sab, nextSabotageAt: Date.now() + cd };
     updates['sabUsed/'+S.myId] = used + 1;
     try{ await roomRef('').update(updates); }catch(e){}
     closeSabMenu();
@@ -3250,15 +3254,27 @@
       else { await roomRef('sabotage/fix/'+roomName).set(true); }
     }catch(e){}
   }
-  // 위급 사보타주 제한시간 초과 → 정체불명 승리
+  // 사보타주 시간 처리
+  //   혼자(테스트) 모드: 아무도 못 고치니 시간 지나면 그냥 해제 (게임 안 끝냄)
+  //   여러 명: 위급 사보타주 제한시간 초과 → 정체불명 승리
   function resolveCriticalTimeout(){
     const sab = S.roomData && S.roomData.sabotage;
-    if(!sab || !sabCfg(sab.type).critical) { S._endingSab = false; return; }
+    if(!sab){ S._endingSab = false; return; }
     if(S.roomData.status !== 'playing') return;
+    const cfg = sabCfg(sab.type);
+    if(isSoloTest()){
+      // 정전은 12초, 위급은 제한시간 지나면 자동 해제 (계속 테스트 가능)
+      const clearAt = cfg.critical ? (sab.deadline||0) : ((sab.at||0) + 12000);
+      if(Date.now() > clearAt && !S._endingSab){
+        S._endingSab = true;
+        try{ roomRef('sabotage').remove(); }catch(e){}
+      }
+      return;
+    }
+    if(!cfg.critical) return;
     if(Date.now() <= (sab.deadline||0)) return;
     if(S._endingSab) return;
     S._endingSab = true;
-    const cfg = sabCfg(sab.type);
     try{ roomRef('').update({ status:'ended', winner:'impostor', sabotage:null, winReason: '💥 '+cfg.icon+' '+cfg.name+'! 제때 못 고쳤어요.' }); }catch(e){}
   }
 
