@@ -279,7 +279,26 @@
   .action-btn.cctv{ background: var(--cyan); color:#04262e; }
   .action-btn.vent{ background:#3a4170; color:var(--text); border:1px solid var(--line); }
   .imp-opt.sel{ background: var(--accent); color:#3a2c02; border-color: var(--accent); }
+  .action-btn.sabotage{ background:#ff3b6b; color:#fff; }
+  .action-btn.fix{ background:#ffd23f; color:#3a2c02; animation: reportPulse 0.8s ease-in-out infinite; }
   .action-btn.invis{ background:#8aa0c8; color:#0e1330; }
+  #sabotageBanner{
+    position:absolute; top:64px; left:50%; transform:translateX(-50%);
+    background:rgba(255,40,70,0.92); color:#fff; font-weight:800; font-size:14px;
+    padding:8px 18px; border-radius:20px; z-index:30; white-space:nowrap;
+    box-shadow:0 4px 18px rgba(255,40,70,0.5); animation: sabPulse 0.9s ease-in-out infinite;
+  }
+  @keyframes sabPulse{ 0%,100%{opacity:0.75;} 50%{opacity:1;} }
+  .fix-switch{
+    width:52px; height:92px; border-radius:12px; background:#20264f; border:2px solid var(--line);
+    position:relative; cursor:pointer; transition:background .15s;
+  }
+  .fix-switch .knob{
+    position:absolute; left:5px; right:5px; height:38px; border-radius:8px; bottom:5px;
+    background:#5a648f; transition:bottom .18s cubic-bezier(.3,1.4,.5,1), background .18s;
+  }
+  .fix-switch.on{ background:#123a2a; border-color:var(--success); }
+  .fix-switch.on .knob{ bottom:calc(100% - 43px); background:var(--success); box-shadow:0 0 12px rgba(72,230,160,0.7); }
   .action-btn.shift{ background:#b98bff; color:#20103a; }
   .shift-dest{ display:flex; align-items:center; gap:10px; background:var(--panel-3); border:1px solid var(--line); border-radius:12px; padding:10px 13px; margin-bottom:8px; cursor:pointer; font-size:15px; }
   .shift-dest:active{ transform:scale(0.98); }
@@ -568,6 +587,8 @@
 
     <div class="controls-bottom">
       <button class="action-btn report hidden" id="btnReport">🚨 시체 신고</button>
+      <button class="action-btn fix hidden" id="btnFix">💡 불 켜기</button>
+      <button class="action-btn sabotage hidden" id="btnSabotage">⚡ 사보타주</button>
       <button class="action-btn invis hidden" id="btnInvis">🫥 투명화</button>
       <button class="action-btn shift hidden" id="btnShift">🎭 변신</button>
       <button class="action-btn vent hidden" id="btnVent">🕳 벤트</button>
@@ -576,6 +597,8 @@
       <button class="action-btn kill hidden" id="btnKill">🔪 제거하기</button>
       <button class="action-btn meeting" id="btnMeeting">🚨 긴급회의</button>
     </div>
+
+    <div id="sabotageBanner" class="hidden">⚡ 정전! <b>전기실</b>로 가서 불을 켜세요</div>
   </div>
 
   <!-- VENT OVERLAY (impostor) -->
@@ -601,6 +624,19 @@
       </div>
       <div id="shiftList"></div>
       <button class="btn btn-ghost btn-small" id="btnShiftCancel" style="width:100%;margin-top:12px;">취소</button>
+    </div>
+  </div>
+
+  <!-- 전력 복구 OVERLAY (정전 사보타주 고치기) -->
+  <div id="overlayFix" class="overlay hidden">
+    <div class="meeting-panel" style="width:min(92vw,420px);">
+      <div class="meeting-header">
+        <p class="eyebrow">⚡ 전력 복구</p>
+        <h2 style="margin:2px 0;font-size:20px;">💡 불 켜기</h2>
+        <p class="subtitle" style="margin:4px 0 0;">스위치를 전부 <b>위로</b> 올리면 불이 켜져요</p>
+      </div>
+      <div id="fixSwitches" style="display:flex;gap:12px;justify-content:center;margin:20px 0 6px;"></div>
+      <button class="btn btn-ghost btn-small" id="btnFixClose" style="width:100%;margin-top:12px;">닫기</button>
     </div>
   </div>
 
@@ -1132,6 +1168,8 @@
     $('overlayEnd').classList.toggle('hidden', v!=='ended');
     if(v!=='playing' && S.missionOpen) closeMission();
     if(v!=='playing' && S.cctvOpen) closeCctv();
+    if(v!=='playing' && S.fixOpen) closeFix();
+    if(v!=='playing') $('sabotageBanner').classList.add('hidden');
     if(v!=='playing' && S.vented) exitVent();
     if(v!=='playing') $('overlayRole').classList.add('hidden');
     if(v!=='playing') $('overlayShift').classList.add('hidden');
@@ -1273,6 +1311,8 @@
     updates['winner'] = null;
     updates['pos'] = null;
     updates['nextMeetingAt'] = 0;
+    updates['sabotage'] = null;
+    updates['nextSabotageAt'] = 0;
     updates['round'] = (S.roomData.round||0) + 1;
     for(const id of ids){
       updates['players/'+id+'/alive'] = true;
@@ -1347,6 +1387,7 @@
     S.moving = false; S.lastMoveDir = { x: 0, y: 0 };
     S.missionOpen = false;
     S.cctvOpen = false;
+    S.fixOpen = false;
     S.vented = false;
     S.invisible = false; S.invisUntil = 0; S.invisCdUntil = 0;
     S.disguiseId = null; S.disguiseUntil = 0; S.shiftCdUntil = 0; S.shiftPendingId = null; S.shiftReadyAt = 0;
@@ -1689,6 +1730,23 @@
     }
 
     mctx.restore();
+
+    // ⚡ 정전(불 끄기) — 화면 어둡게, 내 주위만 조금 보임
+    const sab = S.roomData && S.roomData.sabotage;
+    const meAlive2 = S.roomData && S.roomData.players[S.myId] && S.roomData.players[S.myId].alive;
+    if(sab && sab.type==='lights' && meAlive2 && S.roomData.status==='playing'){
+      const sx = (S.myPos.x - S.cam.x)*scale + w/2;
+      const sy = (S.myPos.y - S.cam.y)*scale + h/2;
+      const imp = isImpostor(S.myId);
+      const vr = (imp ? 330 : 150) * scale;   // 정체불명은 좀 더 잘 봄
+      const g = mctx.createRadialGradient(sx,sy, vr*0.4, sx,sy, vr);
+      g.addColorStop(0, 'rgba(3,4,12,0)');
+      g.addColorStop(0.72, 'rgba(3,4,12,0.85)');
+      g.addColorStop(1, 'rgba(1,2,6,0.97)');
+      mctx.save();
+      mctx.fillStyle = g; mctx.fillRect(0,0,w,h);
+      mctx.restore();
+    }
   }
 
   function roundRect(ctx,x,y,w,h,r){
@@ -2146,6 +2204,7 @@
     const btnKill = $('btnKill'), btnMeeting = $('btnMeeting'), btnTask = $('btnTask'), btnCctv = $('btnCctv'), btnReport = $('btnReport'), btnVent = $('btnVent'), btnInvis = $('btnInvis'), btnShift = $('btnShift');
     if(S.view !== 'playing' || !S.roomData){
       btnKill.classList.add('hidden'); btnTask.classList.add('hidden'); btnCctv.classList.add('hidden'); btnReport.classList.add('hidden'); btnVent.classList.add('hidden'); btnInvis.classList.add('hidden'); btnShift.classList.add('hidden');
+      $('btnSabotage').classList.add('hidden'); $('btnFix').classList.add('hidden'); $('sabotageBanner').classList.add('hidden');
       return;
     }
     const me = S.roomData.players[S.myId];
@@ -2192,6 +2251,24 @@
     const bodyId = (myAlive && !S.missionOpen) ? nearestBody() : null;
     if(bodyId){ btnReport.classList.remove('hidden'); btnReport.dataset.bodyId = bodyId; }
     else { btnReport.classList.add('hidden'); }
+
+    // ⚡ 사보타주 버튼 (정체불명 전용) / 💡 불 켜기 버튼 (정전 중 전기실)
+    const btnSabotage = $('btnSabotage'), btnFix = $('btnFix');
+    const sabActive = !!(S.roomData.sabotage && S.roomData.sabotage.type==='lights');
+    if(role==='impostor' && myAlive && !S.missionOpen && !S.vented && !sabActive){
+      const scd = (S.roomData.nextSabotageAt||0) - now;
+      btnSabotage.classList.remove('hidden');
+      btnSabotage.disabled = scd > 0;
+      btnSabotage.textContent = scd > 0 ? ('⚡ '+Math.ceil(scd/1000)+'초') : '⚡ 사보타주';
+    } else { btnSabotage.classList.add('hidden'); }
+    const inElec = rm && rm.name==='전기실';
+    if(sabActive && myAlive && inElec && !S.missionOpen && !S.vented){
+      btnFix.classList.remove('hidden');
+    } else { btnFix.classList.add('hidden'); if(S.fixOpen && !sabActive) closeFix(); }
+    // 정전 경고 배너
+    $('sabotageBanner').classList.toggle('hidden', !(sabActive && myAlive));
+    // 고치기 창 열려 있으면 실시간 갱신
+    if(S.fixOpen){ if(sabActive) renderFix(); else closeFix(); }
 
     // 벤트 버튼 (임포스터 또는 기술자가 환풍구 위에 있을 때)
     const canVent = (role==='impostor' || myRoleSpecial==='engineer');
@@ -2981,6 +3058,59 @@
   function cancelShift(){ $('overlayShift').classList.add('hidden'); }
 
   // ============================================================
+  // ⚡ 정전 사보타주 (불 끄기) — 정체불명이 불을 끄면 화면이 캄캄해짐
+  // ============================================================
+  const SAB_CD = 25000;        // 사보타주 재사용 쿨타임
+  const NUM_SWITCHES = 5;      // 불 켜는 데 필요한 스위치 수
+  async function doSabotage(){
+    if(!S.roomData || S.roomData.status!=='playing') return;
+    if(!isImpostor(S.myId)) return;
+    if(S.roomData.sabotage) return;                       // 이미 정전 중
+    if(Date.now() < (S.roomData.nextSabotageAt||0)) return;
+    try{
+      await roomRef('').update({
+        sabotage: { type:'lights', at: Date.now(), sw: null },
+        nextSabotageAt: Date.now() + SAB_CD
+      });
+    }catch(e){}
+  }
+  function openFix(){
+    if(!S.roomData || !S.roomData.sabotage) return;
+    S.fixOpen = true;
+    renderFix();
+    $('overlayFix').classList.remove('hidden');
+  }
+  function closeFix(){ S.fixOpen = false; $('overlayFix').classList.add('hidden'); }
+  function renderFix(){
+    const sab = S.roomData && S.roomData.sabotage;
+    const wrap = $('fixSwitches'); if(!wrap) return;
+    if(!sab){ closeFix(); return; }
+    const sw = sab.sw || {};
+    wrap.innerHTML = '';
+    for(let i=0;i<NUM_SWITCHES;i++){
+      const on = !!sw[i];
+      const el = document.createElement('div');
+      el.className = 'fix-switch' + (on?' on':'');
+      el.innerHTML = '<div class="knob"></div>';
+      if(!on) el.addEventListener('click', ()=> flipSwitch(i));
+      wrap.appendChild(el);
+    }
+  }
+  async function flipSwitch(i){
+    const sab = S.roomData && S.roomData.sabotage; if(!sab) return;
+    const sw = { ...(sab.sw||{}) }; sw[i] = true;
+    const count = Object.keys(sw).filter(k=>sw[k]).length;
+    try{
+      if(count >= NUM_SWITCHES){
+        await roomRef('sabotage').remove();   // 전력 복구! 불 켜짐
+        closeFix();
+      } else {
+        await roomRef('sabotage/sw/'+i).set(true);
+      }
+    }catch(e){}
+  }
+
+  // ============================================================
   // CCTV (보안 카메라) — 컴퓨터 있는 방에서 전체 맵을 실시간 감시
   // ============================================================
   let cctvRAF = null;
@@ -3063,7 +3193,7 @@
     if(me && !me.alive) return;
     try{
       await roomRef('').update({
-        status:'meeting',
+        status:'meeting', sabotage: null,
         meeting: { calledBy: S.myId, startedAt: Date.now(), votes: null, resolvedBy: null, byReport: false }
       });
     }catch(e){}
@@ -3084,7 +3214,7 @@
     }
     try{
       const updates = {
-        status:'meeting',
+        status:'meeting', sabotage: null,
         meeting: { calledBy: S.myId, startedAt: Date.now(), votes: null, resolvedBy: null, byReport: true, clue: clue }
       };
       if(bodyId) updates['players/'+bodyId+'/reported'] = true;
@@ -3482,6 +3612,9 @@
   $('btnInvis').addEventListener('click', doInvis);
   $('btnShift').addEventListener('click', openShift);
   $('btnShiftCancel').addEventListener('click', cancelShift);
+  $('btnSabotage').addEventListener('click', doSabotage);
+  $('btnFix').addEventListener('click', openFix);
+  $('btnFixClose').addEventListener('click', closeFix);
   $('chatSend').addEventListener('click', sendChat);
   $('chatInput').addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); sendChat(); } });
   $('btnTask').addEventListener('click', openMission);
