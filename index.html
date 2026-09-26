@@ -170,6 +170,11 @@
   /* ---------- Color picker ---------- */
   .picker-label{ font-size:12px; color:var(--text-dim); text-align:center; margin: 4px 0 6px; }
   .color-picker{ display:flex; flex-wrap:wrap; gap:9px; justify-content:center; margin-bottom: 6px; }
+  .pet-picker{ display:flex; flex-wrap:wrap; gap:7px; justify-content:center; margin-bottom:6px; }
+  .pet-opt{ width:34px; height:34px; border-radius:10px; padding:0; font-size:19px; line-height:1;
+    background:#242b57; border:2px solid rgba(255,255,255,0.18); cursor:pointer; transition:transform .1s; }
+  .pet-opt:active{ transform:scale(0.9); }
+  .pet-opt.mine{ border-color:var(--accent); box-shadow:0 0 0 2px var(--accent), 0 0 10px rgba(255,206,69,0.5); }
   .swatch{
     width:30px; height:30px; border-radius:50%; padding:0;
     border:2px solid rgba(255,255,255,0.25); cursor:pointer; position:relative;
@@ -550,6 +555,8 @@
     <div class="lobby-bottom">
       <div class="picker-label">🎨 내 색깔 고르기 (✕ 는 다른 친구가 쓰는 색)</div>
       <div class="color-picker" id="colorPicker"></div>
+      <div class="picker-label" style="margin-top:6px;">🐶 펫 고르기 (나를 따라다녀!)</div>
+      <div class="pet-picker" id="petPicker"></div>
       <div class="lobby-actions">
         <button class="btn btn-ghost btn-small" id="btnLeaveLobby">나가기</button>
         <div id="lobbyHostControls" style="display:flex;gap:10px;">
@@ -843,6 +850,19 @@
     {id:'gray',    hex:'#7a83b0', name:'회색'},
     {id:'black',   hex:'#3a4066', name:'검정'}
   ];
+  const PET_OPTIONS = [
+    {id:'none', e:'🚫', name:'없음'},
+    {id:'dog',  e:'🐶', name:'강아지'},
+    {id:'cat',  e:'🐱', name:'고양이'},
+    {id:'rabbit',e:'🐰', name:'토끼'},
+    {id:'chick',e:'🐥', name:'병아리'},
+    {id:'frog', e:'🐸', name:'개구리'},
+    {id:'panda',e:'🐼', name:'판다'},
+    {id:'fox',  e:'🦊', name:'여우'},
+    {id:'penguin',e:'🐧', name:'펭귄'},
+    {id:'alien',e:'👽', name:'외계인'},
+  ];
+  function petEmoji(id){ const p = PET_OPTIONS.find(x=>x.id===id); return (p && p.id!=='none') ? p.e : null; }
   const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   const PLAYER_R = 18;
   const MOVE_SPEED = 360; // px/sec
@@ -947,6 +967,52 @@
   function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
   function dist(x1,y1,x2,y2){ return Math.hypot(x1-x2, y1-y2); }
   function colorHex(id){ const c = COLORS.find(c=>c.id===id); return c ? c.hex : '#8891c2'; }
+
+  // ============================================================
+  // 🔊 효과음 — 파일 없이 코드로 소리 생성 (Web Audio)
+  // ============================================================
+  const SFX = (()=>{
+    let ctx = null;
+    function ensure(){
+      try{ if(!ctx) ctx = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){}
+      if(ctx && ctx.state==='suspended'){ try{ ctx.resume(); }catch(e){} }
+      return ctx;
+    }
+    // 브라우저는 사용자가 한 번 눌러야 소리를 허용 → 첫 입력에 오디오 깨우기
+    window.addEventListener('pointerdown', ensure);
+    window.addEventListener('keydown', ensure);
+    function tone(freq, dur, type, vol, delay, slideTo){
+      const c = ensure(); if(!c) return;
+      const t0 = c.currentTime + (delay||0);
+      const o = c.createOscillator(), g = c.createGain();
+      o.type = type||'sine';
+      o.frequency.setValueAtTime(freq, t0);
+      if(slideTo) o.frequency.exponentialRampToValueAtTime(Math.max(1,slideTo), t0+dur);
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(vol||0.2, t0+0.012);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0+dur);
+      o.connect(g); g.connect(c.destination);
+      o.start(t0); o.stop(t0+dur+0.03);
+    }
+    function noise(dur, vol, delay){
+      const c = ensure(); if(!c) return;
+      const t0 = c.currentTime + (delay||0);
+      const buf = c.createBuffer(1, Math.max(1,Math.floor(c.sampleRate*dur)), c.sampleRate);
+      const d = buf.getChannelData(0);
+      for(let i=0;i<d.length;i++) d[i] = (Math.random()*2-1) * (1 - i/d.length);
+      const n = c.createBufferSource(); n.buffer = buf;
+      const g = c.createGain(); g.gain.setValueAtTime(vol||0.2, t0); g.gain.exponentialRampToValueAtTime(0.0001, t0+dur);
+      n.connect(g); g.connect(c.destination); n.start(t0); n.stop(t0+dur+0.02);
+    }
+    return {
+      kill(){ noise(0.16, 0.35); tone(420, 0.2, 'sawtooth', 0.28, 0, 70); },
+      meeting(){ tone(150, 0.55, 'sawtooth', 0.32, 0, 300); tone(300, 0.5, 'square', 0.12, 0.06); },
+      sabotage(){ tone(900,0.16,'square',0.22,0); tone(640,0.16,'square',0.22,0.2); tone(900,0.16,'square',0.22,0.4); },
+      success(){ tone(660,0.12,'sine',0.28,0); tone(880,0.14,'sine',0.28,0.11); tone(1180,0.16,'sine',0.24,0.24); },
+      eject(){ tone(520,0.7,'sine',0.26,0,110); },
+      win(){ tone(523,0.15,'triangle',0.28,0); tone(659,0.15,'triangle',0.28,0.15); tone(784,0.25,'triangle',0.28,0.3); },
+    };
+  })();
 
   // ============================================================
   // App state
@@ -1234,6 +1300,7 @@
     $('lobbyCode').textContent = S.roomCode;
     $('lobbyCount').textContent = count + ' / 20';
     renderColorPicker();
+    renderPetPicker();
     $('lobbyHostControls').classList.toggle('hidden', !S.isHost);
     $('lobbyGuestNote').classList.toggle('hidden', S.isHost);
     const startBtn = $('btnStartGame');
@@ -1292,6 +1359,26 @@
     S.myColorId = colorId;
     renderColorPicker();
     try{ await S.fdb.ref('rooms/'+S.roomCode+'/players/'+S.myId+'/color').set(colorId); }catch(e){}
+  }
+
+  function renderPetPicker(){
+    if(!S.roomData) return;
+    const me = S.roomData.players[S.myId] || {};
+    const cur = me.pet || 'none';
+    const wrap = $('petPicker'); if(!wrap) return;
+    wrap.innerHTML = '';
+    for(const p of PET_OPTIONS){
+      const b = document.createElement('button');
+      b.className = 'pet-opt' + (p.id===cur ? ' mine' : '');
+      b.textContent = p.e; b.title = p.name;
+      b.addEventListener('click', ()=> choosePet(p.id));
+      wrap.appendChild(b);
+    }
+  }
+  async function choosePet(petId){
+    S.myPet = petId;
+    renderPetPicker();
+    try{ await S.fdb.ref('rooms/'+S.roomCode+'/players/'+S.myId+'/pet').set(petId); }catch(e){}
   }
 
   function escapeHtml(s){
@@ -1625,6 +1712,26 @@
     S.cam.y = MAP_H > visH ? clamp(S.cam.y, visH/2, MAP_H - visH/2) : MAP_H/2;
   }
 
+  // 펫 그리기 — 주인 뒤를 스르륵 따라다님
+  function drawPet(id, ownerX, ownerY, facing){
+    const petId = (id===S.myId) ? (S.myPet || (S.roomData.players[S.myId]&&S.roomData.players[S.myId].pet))
+                                : (S.roomData.players[id] && S.roomData.players[id].pet);
+    const emo = petEmoji(petId); if(!emo) return;
+    S.petPos = S.petPos || {};
+    const tx = ownerX - (facing||1)*PLAYER_R*1.15;   // 주인 뒤쪽
+    const ty = ownerY + PLAYER_R*0.35;
+    let pp = S.petPos[id];
+    if(!pp){ pp = S.petPos[id] = { x: tx, y: ty }; }
+    pp.x += (tx - pp.x) * 0.18;
+    pp.y += (ty - pp.y) * 0.18;
+    const bob = Math.sin(performance.now()/220 + (id.charCodeAt(0)||0)) * 3;
+    mctx.save();
+    mctx.font = Math.round(PLAYER_R*1.1)+'px serif';
+    mctx.textAlign = 'center'; mctx.textBaseline = 'middle';
+    mctx.fillText(emo, pp.x, pp.y + bob);
+    mctx.restore();
+  }
+
   function drawMap(){
     const w = mapCanvas.width, h = mapCanvas.height;
     mctx.save();
@@ -1728,6 +1835,7 @@
         S.peerPrevDisg[peer.id] = peer.disguise;
       }
       if(peer.alive){
+        drawPet(peer.id, peer.x, peer.y, S.peerFacing[peer.id]||1);
         drawCrewmate(mctx, peer.x, peer.y, colorHex(peer.color), peer.name, true, false, S.peerFacing[peer.id]||1, S.peerWalk[peer.id]||0);
       } else {
         drawGhost(mctx, peer.x, peer.y, colorHex(peer.color), peer.name, false);
@@ -1745,6 +1853,7 @@
       // 변신 중이면 대상 모습, 투명 중이면 반투명하게
       let myName = S.myName + ' (나)', myCol = S.myColorId;
       if(S.disguiseId && allPlayers[S.disguiseId]){ myName = allPlayers[S.disguiseId].name + ' (나·변신)'; myCol = allPlayers[S.disguiseId].color; }
+      if(!S.disguiseId) drawPet(S.myId, S.myPos.x, S.myPos.y, S.myFacing||1);
       if(S.invisible){ mctx.save(); mctx.globalAlpha = 0.4; drawCrewmate(mctx, S.myPos.x, S.myPos.y, colorHex(myCol), myName+' (투명)', true, true, S.myFacing||1, S.myWalk||0); mctx.restore(); }
       else { drawCrewmate(mctx, S.myPos.x, S.myPos.y, colorHex(myCol), myName, true, true, S.myFacing||1, S.myWalk||0); }
     } else {
@@ -2330,6 +2439,10 @@
     const sab = S.roomData.sabotage;
     const sabActive = !!sab;
     const sabC = sab ? sabCfg(sab.type) : null;
+    // 사보타주가 새로 시작되면 경보음
+    const sabKey = sab ? (sab.type + (sab.at||0)) : null;
+    if(sabKey && sabKey !== S._prevSabKey) SFX.sabotage();
+    S._prevSabKey = sabKey;
     // 위급 사보타주 제한시간 처리
     resolveCriticalTimeout();
     if(!sabActive) S._endingSab = false;
@@ -2498,6 +2611,7 @@
   function missionDone(){
     const spotId = S.missionSpotId;
     runMgCleanup();
+    SFX.success();
     $('missionHint').textContent = '';
     $('missionBody').innerHTML = '<div class="mg-success">✅ 미션 성공!</div>';
     completeTask(spotId);
@@ -2981,6 +3095,7 @@
           }
           S.deathFx.push({ x:pos.x, y:pos.y, t:performance.now(), ang, drops });
         }
+        SFX.kill();
       }
       S.prevAliveMap[id] = a;
     }
@@ -3598,6 +3713,7 @@
   let meetingTickHandle = null;
   function enterMeeting(){
     setView('meeting');
+    SFX.meeting();
     S.myVoteTarget = null;
     const byReport = S.roomData && S.roomData.meeting && S.roomData.meeting.byReport;
     $('meetingEyebrow').textContent = byReport ? '🚨 시체 발견!' : '긴급회의';
@@ -3849,6 +3965,7 @@
   // ============================================================
   function enterEnded(){
     setView('ended');
+    SFX.win();
     const banner = $('endBanner');
     const winner = S.roomData.winner;
     banner.className = 'banner ' + (winner==='crew' ? 'crew' : 'impostor');
