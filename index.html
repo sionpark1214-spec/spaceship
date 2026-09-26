@@ -1583,11 +1583,14 @@
           const stepX = (dx/len)*spd*dt;
           const stepY = (dy/len)*spd*dt;
           if(alive){
-            // 산 사람: 벽 충돌 체크
+            // 산 사람: 벽 충돌 체크 (문이 잠기면 크루원은 방 밖으로 못 나감)
+            const locked = doorsLockedForMe();
+            const okX = (x)=> locked ? !!roomAt(x, S.myPos.y) : walkableAt(x, S.myPos.y);
+            const okY = (y)=> locked ? !!roomAt(S.myPos.x, y) : walkableAt(S.myPos.x, y);
             const nx = clamp(S.myPos.x + stepX, PLAYER_R, MAP_W-PLAYER_R);
-            if(walkableAt(nx, S.myPos.y)) S.myPos.x = nx;
+            if(okX(nx)) S.myPos.x = nx;
             const ny = clamp(S.myPos.y + stepY, PLAYER_R, MAP_H-PLAYER_R);
-            if(walkableAt(S.myPos.x, ny)) S.myPos.y = ny;
+            if(okY(ny)) S.myPos.y = ny;
           } else {
             // 유령: 벽 통과, 맵 경계 안에서 자유 이동
             S.myPos.x = clamp(S.myPos.x + stepX, 20, MAP_W-20);
@@ -1801,6 +1804,14 @@
         const g = mctx.createRadialGradient(w/2,h/2, Math.min(w,h)*0.35, w/2,h/2, Math.max(w,h)*0.62);
         g.addColorStop(0, 'rgba(255,30,60,0)');
         g.addColorStop(1, 'rgba(255,20,50,'+pulse+')');
+        mctx.save(); mctx.fillStyle = g; mctx.fillRect(0,0,w,h); mctx.restore();
+      } else if(sab.type==='doors'){
+        // 🚪 문 잠금 — 노란 경고 테두리 (갇힌 크루원에게 더 진하게)
+        const strong = doorsLockedForMe();
+        const pulse = (strong?0.4:0.18) + 0.2*Math.abs(Math.sin(performance.now()/300));
+        const g = mctx.createRadialGradient(w/2,h/2, Math.min(w,h)*0.4, w/2,h/2, Math.max(w,h)*0.62);
+        g.addColorStop(0, 'rgba(255,180,40,0)');
+        g.addColorStop(1, 'rgba(255,160,20,'+pulse+')');
         mctx.save(); mctx.fillStyle = g; mctx.fillRect(0,0,w,h); mctx.restore();
       }
     }
@@ -2344,6 +2355,9 @@
         const left = Math.max(0, Math.ceil(((sab.deadline||0)-now)/1000));
         const need = sabC.rooms.filter(r=> !(sab.fix&&sab.fix[r]));
         $('sabotageBanner').innerHTML = sabC.icon+' <b>'+sabC.name+'</b>까지 '+left+'초! → '+need.join(', ')+'(으)로!';
+      } else if(sab.type==='doors'){
+        const left = Math.max(0, Math.ceil(((sab.at||0)+DOORS_DUR-now)/1000));
+        $('sabotageBanner').innerHTML = '🚪 <b>문이 잠겼다!</b> '+left+'초 — 방 밖으로 못 나가!';
       } else {
         $('sabotageBanner').innerHTML = sabC.icon+' 정전! <b>전기실</b>로 가서 불을 켜세요';
       }
@@ -3180,7 +3194,16 @@
     engine:  { icon:'🔥', name:'엔진 폭발',       critical:true, dur:28000, rooms:['엔진실'],          fix:'🔥 엔진 진화' },
     meteor:  { icon:'☄️', name:'운석 충돌',       critical:true, dur:28000, rooms:['무기고'],          fix:'☄️ 운석 요격' },
     garden:  { icon:'🌱', name:'식물 물 부족',    critical:true, dur:34000, rooms:['정원'],            fix:'🌱 물 주기' },
+    doors:   { icon:'🚪', name:'문 잠그기',       critical:false, dur:8000, rooms:[],                  fix:null },
   };
+  const DOORS_DUR = 8000;   // 문이 잠겨있는 시간
+  // 문 잠금 중 나는 못 움직이나? (정체불명은 통과, 크루원만 갇힘)
+  function doorsLockedForMe(){
+    const sab = S.roomData && S.roomData.sabotage;
+    if(!sab || sab.type!=='doors') return false;
+    if(isImpostor(S.myId)) return false;   // 정체불명은 문을 통과
+    return true;
+  }
   function sabCfg(t){ return SABOTAGES[t] || SABOTAGES.lights; }
   function sabAllFixed(sab){
     if(!sab) return true;
@@ -3371,6 +3394,14 @@
     if(!sab){ S._endingSab = false; return; }
     if(S.roomData.status !== 'playing') return;
     const cfg = sabCfg(sab.type);
+    // 문 잠그기: 시간 지나면 자동으로 열림 (모두에게)
+    if(sab.type==='doors'){
+      if(Date.now() > (sab.at||0)+DOORS_DUR && !S._endingSab){
+        S._endingSab = true;
+        try{ roomRef('sabotage').remove(); }catch(e){}
+      }
+      return;
+    }
     if(isSoloTest()){
       // 정전은 12초, 위급은 제한시간 지나면 자동 해제 (계속 테스트 가능)
       const clearAt = cfg.critical ? (sab.deadline||0) : ((sab.at||0) + 12000);
