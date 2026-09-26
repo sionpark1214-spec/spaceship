@@ -2566,7 +2566,7 @@
   // ============================================================
   // Missions (walk to a task spot, complete a mini-game)
   // ============================================================
-  const MISSION_STAGES = 3;   // 미션마다 몇 단계(라운드)를 통과해야 하는지 — 클수록 오래 걸림
+  const MISSION_STAGES = 1;   // 미션 단계 수 (1 = 한 번에 끝, 대신 하나하나가 오래 걸림)
   function openMission(){
     const spotId = $('btnTask').dataset.spotId;
     const spot = TASK_SPOTS.find(t=>t.id===spotId);
@@ -2603,7 +2603,7 @@
     }
   }
   // 현재 단계 번호를 붙여서 힌트 표시
-  function mgSetHint(t){ $('missionHint').textContent = '['+S._mgStage+'/'+S._mgStages+'단계] '+t; }
+  function mgSetHint(t){ $('missionHint').textContent = (S._mgStages>1 ? ('['+S._mgStage+'/'+S._mgStages+'단계] ') : '') + t; }
 
   function runMgCleanup(){ if(S._mgCleanup){ S._mgCleanup.forEach(fn=>{ try{fn();}catch(e){} }); S._mgCleanup=[]; } }
 
@@ -2633,7 +2633,7 @@
     const fill = document.createElement('div'); fill.className='mg-progress-fill'; track.appendChild(fill);
     const label = document.createElement('div'); label.style.cssText='text-align:center;font-family:"Space Mono",monospace;margin-top:8px;color:var(--cyan);font-size:18px'; label.textContent='0%';
     body.appendChild(track); body.appendChild(label);
-    const dur=5000, start=performance.now(); let raf=null; let done=false;
+    const dur=13000, start=performance.now(); let raf=null; let done=false;
     function tick(){ if(done) return; const e=performance.now()-start; const p=Math.min(1,e/dur); fill.style.width=(p*100)+'%'; label.textContent=Math.floor(p*100)+'%'; if(p>=1){ done=true; mgStageComplete(); return; } raf=requestAnimationFrame(tick); }
     raf=requestAnimationFrame(tick);
     S._mgCleanup.push(()=>{ done=true; if(raf)cancelAnimationFrame(raf); });
@@ -2694,7 +2694,7 @@
     body.innerHTML = '';
     const grid = document.createElement('div');
     grid.className = 'mg-grid';
-    const COUNT = 7;
+    const COUNT = 8;
     const positions = [0,1,2,3,4,5,6,7,8].sort(()=>Math.random()-0.5).slice(0,COUNT);
     const cellNums = {};
     positions.forEach((pos,i)=>{ cellNums[pos] = i+1; });
@@ -2724,7 +2724,7 @@
 
   // Mini-game 2: tap a button 12 times
   function missionTap(){
-    const need = 18;
+    const need = 45;
     let count = 0;
     mgSetHint('버튼을 빠르게 '+need+'번 눌러줘!');
     const body = $('missionBody');
@@ -2742,7 +2742,7 @@
 
   // Mini-game 3: hold a button for 2.2s
   function missionHold(){
-    const need = 3800;
+    const need = 9000;
     mgSetHint('버튼을 꾹 누르고 있어! (떼면 처음부터)');
     const body = $('missionBody');
     body.innerHTML = '';
