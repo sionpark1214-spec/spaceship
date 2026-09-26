@@ -1365,9 +1365,8 @@
     const players = S.roomData.players || {};
     const imp = S.roomData.impostorMap || {};
     let done = 0, total = 0;
-    const solo = isSoloTest();  // 혼자 테스트일 땐 내(임포스터) 미션도 진행도에 셈
     for(const id in players){
-      if(imp[id] && !solo) continue;
+      if(imp[id]) continue;   // 정체불명 미션은 진행도에 포함하지 않음
       const t = players[id].tasks || {};
       const keys = Object.keys(t);
       total += keys.length;
@@ -2364,11 +2363,11 @@
     btnMeeting.disabled = !myAlive || cdMs > 0 || S.roomData.status !== 'playing' || critBlock;
     btnMeeting.textContent = critBlock ? '🚨 위급!' : (cdMs > 0 ? ('🚨 '+Math.ceil(cdMs/1000)+'초') : '🚨 긴급회의');
 
-    // task progress bar
+    // task progress bar (정체불명 미션은 빠짐 → 혼자 테스트면 셀 미션이 없음)
     const pr = taskProgress();
     const pct = pr.total > 0 ? Math.round(pr.done/pr.total*100) : 0;
     $('taskBarFill').style.width = pct + '%';
-    $('taskBarNum').textContent = pr.done + ' / ' + pr.total;
+    $('taskBarNum').textContent = (pr.total === 0 && isSoloTest()) ? '🧪 테스트' : (pr.done + ' / ' + pr.total);
   }
 
   async function doKill(){
@@ -2624,10 +2623,9 @@
     updates['players/'+S.myId+'/tasks/'+spotId] = true;
     updates['players/'+S.myId+'/tasksDone'] = (me.tasksDone||0) + 1;
     const imp = S.roomData.impostorMap || {};
-    const solo = isSoloTest();
     let done=0, total=0;
     for(const id in players){
-      if(imp[id] && !solo) continue;
+      if(imp[id]) continue;   // 정체불명 미션은 진행도/승리 계산에서 제외
       const t = players[id].tasks || {}; const ks = Object.keys(t);
       total += ks.length; done += ks.filter(k=>t[k]).length;
     }
