@@ -2408,6 +2408,7 @@
   // ============================================================
   // Missions (walk to a task spot, complete a mini-game)
   // ============================================================
+  const MISSION_STAGES = 3;   // 미션마다 몇 단계(라운드)를 통과해야 하는지 — 클수록 오래 걸림
   function openMission(){
     const spotId = $('btnTask').dataset.spotId;
     const spot = TASK_SPOTS.find(t=>t.id===spotId);
@@ -2419,9 +2420,32 @@
     $('missionTitle').textContent = spot.name;
     $('overlayMission').classList.remove('hidden');
     const games = { seq: missionSequence, tap: missionTap, hold: missionHold, wire: missionWiring, swipe: missionSwipe, download: missionDownload };
-    const game = games[spot.game] || missionTap;
-    game();
+    S._mgFn = games[spot.game] || missionTap;
+    S._mgStages = MISSION_STAGES;
+    S._mgStage = 1;
+    runStage();
   }
+
+  function runStage(){
+    runMgCleanup();
+    $('missionBody').innerHTML = '';
+    S._mgFn();
+  }
+  // 한 단계 성공 → 다음 단계로. 마지막 단계면 미션 완료
+  function mgStageComplete(){
+    if(S._mgStage < S._mgStages){
+      const doneN = S._mgStage;
+      S._mgStage++;
+      runMgCleanup();
+      $('missionHint').textContent = '';
+      $('missionBody').innerHTML = '<div class="mg-success" style="font-size:19px">✅ '+doneN+'/'+S._mgStages+' 단계 완료! 다음...</div>';
+      setTimeout(()=>{ if(S.missionOpen) runStage(); }, 750);
+    } else {
+      missionDone();
+    }
+  }
+  // 현재 단계 번호를 붙여서 힌트 표시
+  function mgSetHint(t){ $('missionHint').textContent = '['+S._mgStage+'/'+S._mgStages+'단계] '+t; }
 
   function runMgCleanup(){ if(S._mgCleanup){ S._mgCleanup.forEach(fn=>{ try{fn();}catch(e){} }); S._mgCleanup=[]; } }
 
@@ -2444,21 +2468,21 @@
 
   // 어몽어스: 데이터 전송 (진행바 차오름)
   function missionDownload(){
-    $('missionHint').textContent = '데이터 전송 중... 기다려줘!';
+    mgSetHint('데이터 전송 중... 기다려줘!');
     const body = $('missionBody'); body.innerHTML = '';
     const track = document.createElement('div'); track.className='mg-progress-track';
     const fill = document.createElement('div'); fill.className='mg-progress-fill'; track.appendChild(fill);
     const label = document.createElement('div'); label.style.cssText='text-align:center;font-family:"Space Mono",monospace;margin-top:8px;color:var(--cyan);font-size:18px'; label.textContent='0%';
     body.appendChild(track); body.appendChild(label);
-    const dur=3400, start=performance.now(); let raf=null; let done=false;
-    function tick(){ if(done) return; const e=performance.now()-start; const p=Math.min(1,e/dur); fill.style.width=(p*100)+'%'; label.textContent=Math.floor(p*100)+'%'; if(p>=1){ done=true; missionDone(); return; } raf=requestAnimationFrame(tick); }
+    const dur=5000, start=performance.now(); let raf=null; let done=false;
+    function tick(){ if(done) return; const e=performance.now()-start; const p=Math.min(1,e/dur); fill.style.width=(p*100)+'%'; label.textContent=Math.floor(p*100)+'%'; if(p>=1){ done=true; mgStageComplete(); return; } raf=requestAnimationFrame(tick); }
     raf=requestAnimationFrame(tick);
     S._mgCleanup.push(()=>{ done=true; if(raf)cancelAnimationFrame(raf); });
   }
 
   // 어몽어스: ID 카드 긁기 (알맞은 속도로 밀기)
   function missionSwipe(){
-    $('missionHint').textContent = '카드를 오른쪽 끝까지 주욱 밀어줘!';
+    mgSetHint('카드를 오른쪽 끝까지 알맞은 속도로 밀어줘!');
     const body = $('missionBody'); body.innerHTML = '';
     const slot = document.createElement('div'); slot.className='mg-slot';
     const card = document.createElement('div'); card.className='mg-card'; card.textContent='💳 ID';
@@ -2470,9 +2494,9 @@
     function down(e){ e.preventDefault(); dragging=true; startX=px(e); startT=performance.now(); }
     function move(e){ if(!dragging)return; e.preventDefault(); let nx=curX+(px(e)-startX); nx=Math.max(0,Math.min(maxX(),nx)); card.style.left=nx+'px'; }
     function up(){ if(!dragging)return; dragging=false; const nx=parseFloat(card.style.left)||0; const dur=performance.now()-startT;
-      if(nx>=maxX()-6){ if(dur<200){ msg.textContent='너무 빨라요! 다시 🐢'; card.style.left='0px'; curX=0; }
-        else if(dur>1800){ msg.textContent='너무 느려요! 다시 🐇'; card.style.left='0px'; curX=0; }
-        else { msg.style.color='var(--success)'; msg.textContent='✅ 승인!'; missionDone(); } }
+      if(nx>=maxX()-6){ if(dur<300){ msg.textContent='너무 빨라요! 다시 🐢'; card.style.left='0px'; curX=0; }
+        else if(dur>1100){ msg.textContent='너무 느려요! 다시 🐇'; card.style.left='0px'; curX=0; }
+        else { msg.style.color='var(--success)'; msg.textContent='✅ 승인!'; mgStageComplete(); } }
       else { msg.textContent='끝까지 밀어줘!'; card.style.left='0px'; curX=0; } }
     card.addEventListener('mousedown',down); card.addEventListener('touchstart',down,{passive:false});
     window.addEventListener('mousemove',move); window.addEventListener('touchmove',move,{passive:false});
@@ -2482,13 +2506,13 @@
 
   // 어몽어스: 전선 잇기 (같은 색 연결)
   function missionWiring(){
-    $('missionHint').textContent = '왼쪽 전선을 같은 색 오른쪽에 연결! (톡 → 톡)';
+    mgSetHint('왼쪽 전선을 같은 색 오른쪽에 연결! (톡 → 톡)');
     const body = $('missionBody'); body.innerHTML = '';
     const wrap = document.createElement('div'); wrap.className='mg-wire-wrap';
     const cv = document.createElement('canvas'); cv.className='mg-wire-canvas';
     const leftCol = document.createElement('div'); leftCol.className='mg-wire-col';
     const rightCol = document.createElement('div'); rightCol.className='mg-wire-col';
-    const cols = ['#ff5470','#5c8dff','#ffce45','#48e6a0'];
+    const cols = ['#ff5470','#5c8dff','#ffce45','#48e6a0','#b98bff','#ff9a4d'];
     const rOrder = cols.slice().sort(()=>Math.random()-0.5);
     const leftNubs=[], rightNubs=[];
     cols.forEach(c=>{ const n=document.createElement('div'); n.className='mg-nub'; n.style.background=c; n.dataset.color=c; leftCol.appendChild(n); leftNubs.push(n); });
@@ -2498,7 +2522,7 @@
     function redraw(){ const rct=wrap.getBoundingClientRect(); cv.width=rct.width; cv.height=rct.height; const ctx=cv.getContext('2d'); ctx.clearRect(0,0,cv.width,cv.height); ctx.lineWidth=6; ctx.lineCap='round';
       for(const cn of conns){ const a=cn.l.getBoundingClientRect(), b=cn.r.getBoundingClientRect(); ctx.strokeStyle=cn.color; ctx.beginPath(); ctx.moveTo(a.right-rct.left, a.top+a.height/2-rct.top); ctx.lineTo(b.left-rct.left, b.top+b.height/2-rct.top); ctx.stroke(); } }
     leftNubs.forEach(n=> n.addEventListener('click', ()=>{ if(conns.find(c=>c.l===n))return; leftNubs.forEach(x=>x.classList.remove('sel')); n.classList.add('sel'); sel=n; }));
-    rightNubs.forEach(n=> n.addEventListener('click', ()=>{ if(!sel || conns.find(c=>c.r===n))return; if(n.dataset.color===sel.dataset.color){ conns.push({color:n.dataset.color,l:sel,r:n}); sel.classList.remove('sel'); sel.classList.add('done'); n.classList.add('done'); sel=null; redraw(); if(conns.length===cols.length) missionDone(); } else { n.classList.add('bad'); setTimeout(()=>n.classList.remove('bad'),300); } }));
+    rightNubs.forEach(n=> n.addEventListener('click', ()=>{ if(!sel || conns.find(c=>c.r===n))return; if(n.dataset.color===sel.dataset.color){ conns.push({color:n.dataset.color,l:sel,r:n}); sel.classList.remove('sel'); sel.classList.add('done'); n.classList.add('done'); sel=null; redraw(); if(conns.length===cols.length) mgStageComplete(); } else { n.classList.add('bad'); setTimeout(()=>n.classList.remove('bad'),300); } }));
     setTimeout(redraw, 60);
     window.addEventListener('resize', redraw);
     S._mgCleanup.push(()=> window.removeEventListener('resize', redraw));
@@ -2506,12 +2530,13 @@
 
   // Mini-game 1: press numbers 1..5 in order
   function missionSequence(){
-    $('missionHint').textContent = '숫자를 1부터 순서대로 눌러줘!';
+    mgSetHint('숫자를 1부터 순서대로 눌러줘! (틀리면 처음부터)');
     const body = $('missionBody');
     body.innerHTML = '';
     const grid = document.createElement('div');
     grid.className = 'mg-grid';
-    const positions = [0,1,2,3,4,5,6,7,8].sort(()=>Math.random()-0.5).slice(0,5);
+    const COUNT = 7;
+    const positions = [0,1,2,3,4,5,6,7,8].sort(()=>Math.random()-0.5).slice(0,COUNT);
     const cellNums = {};
     positions.forEach((pos,i)=>{ cellNums[pos] = i+1; });
     let next = 1;
@@ -2523,7 +2548,7 @@
         cell.addEventListener('click', ()=>{
           if(cellNums[i] === next){
             cell.classList.add('done'); cell.disabled = true; next++;
-            if(next > 5) missionDone();
+            if(next > COUNT) mgStageComplete();
           } else {
             // wrong order: reset
             next = 1;
@@ -2540,9 +2565,9 @@
 
   // Mini-game 2: tap a button 12 times
   function missionTap(){
-    const need = 12;
+    const need = 18;
     let count = 0;
-    $('missionHint').textContent = '버튼을 빠르게 '+need+'번 눌러줘!';
+    mgSetHint('버튼을 빠르게 '+need+'번 눌러줘!');
     const body = $('missionBody');
     body.innerHTML = '';
     const track = document.createElement('div'); track.className='mg-progress-track';
@@ -2551,15 +2576,15 @@
     btn.addEventListener('click', ()=>{
       count++; fill.style.width = Math.min(100, count/need*100)+'%';
       btn.textContent = '👆 탭! ('+count+'/'+need+')';
-      if(count>=need){ btn.disabled=true; missionDone(); }
+      if(count>=need){ btn.disabled=true; mgStageComplete(); }
     });
     body.appendChild(track); body.appendChild(btn);
   }
 
   // Mini-game 3: hold a button for 2.2s
   function missionHold(){
-    const need = 2200;
-    $('missionHint').textContent = '버튼을 꾹 누르고 있어! (떼면 처음부터)';
+    const need = 3800;
+    mgSetHint('버튼을 꾹 누르고 있어! (떼면 처음부터)');
     const body = $('missionBody');
     body.innerHTML = '';
     const track = document.createElement('div'); track.className='mg-progress-track';
@@ -2569,7 +2594,7 @@
     const tick=()=>{
       const held = performance.now()-start;
       fill.style.width = Math.min(100, held/need*100)+'%';
-      if(held>=need){ done=true; stop(); btn.disabled=true; missionDone(); return; }
+      if(held>=need){ done=true; stop(); btn.disabled=true; mgStageComplete(); return; }
       raf=requestAnimationFrame(tick);
     };
     const startHold=(e)=>{ if(done) return; e.preventDefault(); start=performance.now(); if(raf)cancelAnimationFrame(raf); raf=requestAnimationFrame(tick); };
