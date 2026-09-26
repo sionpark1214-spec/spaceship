@@ -9,6 +9,9 @@
 
   /* 모바일에서 빠르게 눌러도 더블탭 확대가 안 되게 (iOS 포함) */
   html, body{ touch-action: manipulation; }
+  #btnMusic{ position:fixed; top:10px; right:10px; z-index:200; width:40px; height:40px; border-radius:50%;
+    background:rgba(20,26,58,0.85); border:1px solid var(--line); color:var(--text); font-size:18px; cursor:pointer; padding:0; }
+  #btnMusic.off{ opacity:0.5; }
   button, .overlay, .meeting-panel, .mg-nub, .fix-switch, .shift-dest{ touch-action: manipulation; }
 
   :root{
@@ -438,6 +441,7 @@
 <body>
 <div class="app">
   <canvas id="stars"></canvas>
+  <button id="btnMusic" title="배경음악 켜기/끄기">🎵</button>
 
   <!-- TITLE SCREEN -->
   <div id="screenTitle" class="panel">
@@ -1038,8 +1042,45 @@
       n.connect(g); g.connect(c.destination); n.start(t0); n.stop(t0+dur+0.02);
     }
     function blip(){ tone(880,0.09,'sine',0.22,0); }
+
+    // 🎵 배경음악 — 코드로 만든 잔잔한 우주 루프
+    let bgmTimer=null, bgmStep=0, bgmMood='play', bgmOn=true;
+    try{ bgmOn = localStorage.getItem('ss_bgm')!=='0'; }catch(e){}
+    const SCALES = {
+      play:    [523.25,587.33,659.25,783.99,880.00],   // 밝은 5음계
+      meeting: [440.00,466.16,523.25,587.33,349.23],   // 긴장감
+    };
+    const PATT = { play:[0,1,2,4,3,2,1,0], meeting:[0,2,1,3,0,4,2,1] };
+    function bgmNote(){
+      const c = ensure(); if(!c || !bgmOn) return;
+      const scale = SCALES[bgmMood]||SCALES.play;
+      const patt = PATT[bgmMood]||PATT.play;
+      const t0 = c.currentTime;
+      const f = scale[patt[bgmStep % patt.length]];
+      const o=c.createOscillator(), g=c.createGain();
+      o.type='triangle'; o.frequency.value=f;
+      const vol = bgmMood==='meeting'?0.05:0.04;
+      g.gain.setValueAtTime(0.0001,t0);
+      g.gain.exponentialRampToValueAtTime(vol,t0+0.05);
+      g.gain.exponentialRampToValueAtTime(0.0001,t0+0.55);
+      o.connect(g); g.connect(c.destination); o.start(t0); o.stop(t0+0.62);
+      if(bgmStep%4===0){   // 4박마다 부드러운 베이스
+        const b=c.createOscillator(), bg=c.createGain();
+        b.type='sine'; b.frequency.value=f/2;
+        bg.gain.setValueAtTime(0.0001,t0); bg.gain.exponentialRampToValueAtTime(0.055,t0+0.06); bg.gain.exponentialRampToValueAtTime(0.0001,t0+0.95);
+        b.connect(bg); bg.connect(c.destination); b.start(t0); b.stop(t0+1.0);
+      }
+      bgmStep++;
+    }
+    function bgmTempo(){ return bgmMood==='meeting'?360:520; }
+    function bgmStart(mood){ bgmMood=mood||'play'; ensure(); if(!bgmOn || bgmTimer) return; bgmStep=0; bgmTimer=setInterval(bgmNote, bgmTempo()); }
+    function bgmSetMood(mood){ if(mood===bgmMood) return; bgmMood=mood; if(bgmTimer){ clearInterval(bgmTimer); bgmTimer=setInterval(bgmNote, bgmTempo()); } }
+    function bgmStop(){ if(bgmTimer){ clearInterval(bgmTimer); bgmTimer=null; } }
+    function bgmToggle(){ bgmOn=!bgmOn; try{ localStorage.setItem('ss_bgm', bgmOn?'1':'0'); }catch(e){} if(!bgmOn){ bgmStop(); } else { bgmStart(bgmMood); } return bgmOn; }
+
     return {
       blip,
+      bgmStart, bgmSetMood, bgmStop, bgmToggle, bgmEnabled:()=>bgmOn,
       tap(){ tone(660,0.05,'square',0.16,0); },
       kill(){ noise(0.16, 0.4); tone(420, 0.2, 'sawtooth', 0.3, 0, 70); },
       meeting(){ tone(150, 0.55, 'sawtooth', 0.34, 0, 300); tone(300, 0.5, 'square', 0.14, 0.06); },
@@ -1568,6 +1609,7 @@
     showRoleBanner();
     renderHudPlayerList();
     startGameLoop();
+    SFX.bgmStart('play');
   }
 
   function myRole(){
@@ -3787,6 +3829,7 @@
   function enterMeeting(){
     setView('meeting');
     SFX.meeting();
+    SFX.bgmSetMood('meeting');
     S.myVoteTarget = null;
     const byReport = S.roomData && S.roomData.meeting && S.roomData.meeting.byReport;
     $('meetingEyebrow').textContent = byReport ? '🚨 시체 발견!' : '긴급회의';
@@ -3962,7 +4005,7 @@
     try{ await roomRef('').update(updates); }catch(e){}
   }
 
-  function maybeShowResultThenReturn(){ showResultOverlay(()=>{ setView('playing'); }); }
+  function maybeShowResultThenReturn(){ showResultOverlay(()=>{ setView('playing'); SFX.bgmSetMood('play'); }); }
   function maybeShowResultThenEnd(){ showResultOverlay(()=>{ enterEnded(); }); }
 
   function showResultOverlay(after){
@@ -4038,6 +4081,7 @@
   // ============================================================
   function enterEnded(){
     setView('ended');
+    SFX.bgmStop();
     SFX.win();
     const banner = $('endBanner');
     const winner = S.roomData.winner;
@@ -4081,6 +4125,7 @@
 
   function backToLobbyView(){
     setView('lobby');
+    SFX.bgmStop();
     renderLobby();
     startLobbyScene();
   }
@@ -4189,6 +4234,8 @@
   $('btnAdminClose').addEventListener('click', closeAdmin);
   $('btnVitals').addEventListener('click', openVitals);
   $('btnVitalsClose').addEventListener('click', closeVitals);
+  (function(){ const mb=$('btnMusic'); function sync(){ const on=SFX.bgmEnabled(); mb.textContent=on?'🎵':'🔇'; mb.classList.toggle('off',!on); }
+    sync(); mb.addEventListener('click', ()=>{ SFX.bgmToggle(); sync(); }); })();
   $('btnCopyInvite').addEventListener('click', copyInviteLink);
   $('btnLeaveLobby').addEventListener('click', leaveRoom);
   $('btnEndLeave').addEventListener('click', leaveRoom);
