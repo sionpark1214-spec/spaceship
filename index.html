@@ -1349,7 +1349,7 @@
     S.cctvOpen = false;
     S.vented = false;
     S.invisible = false; S.invisUntil = 0; S.invisCdUntil = 0;
-    S.disguiseId = null; S.disguiseUntil = 0; S.shiftCdUntil = 0;
+    S.disguiseId = null; S.disguiseUntil = 0; S.shiftCdUntil = 0; S.shiftPendingId = null; S.shiftReadyAt = 0;
     S.deathFx = [];
     showRoleReveal();
     showRoleBanner();
@@ -2140,6 +2140,13 @@
     // 투명화/변신 자동 종료
     if(S.invisible && now > (S.invisUntil||0)) S.invisible = false;
     if(S.disguiseId && now > (S.disguiseUntil||0)) S.disguiseId = null;
+    // 변신 대기 중 → 3.7초 지나면 실제로 변신
+    if(S.shiftPendingId && now >= (S.shiftReadyAt||0)){
+      S.disguiseId = S.shiftPendingId;
+      S.disguiseUntil = now + SHIFT_DUR;
+      S.shiftCdUntil = now + SHIFT_CD;
+      S.shiftPendingId = null;
+    }
 
     // kill button (+ cooldown countdown)
     if(role==='impostor' && myAlive && !S.missionOpen){
@@ -2187,7 +2194,8 @@
     if(myRoleSpecial==='shapeshifter' && myAlive && !S.missionOpen && !S.vented){
       btnShift.classList.remove('hidden');
       const cd = (S.shiftCdUntil||0) - now;
-      if(S.disguiseId){ btnShift.disabled = false; btnShift.textContent = '🎭 원래대로'; }
+      if(S.shiftPendingId){ btnShift.disabled = true; btnShift.textContent = '🎭 변신 중… '+(Math.max(0,((S.shiftReadyAt||0)-now)/1000)).toFixed(1)+'초'; }
+      else if(S.disguiseId){ btnShift.disabled = false; btnShift.textContent = '🎭 원래대로'; }
       else if(cd > 0){ btnShift.disabled = true; btnShift.textContent = '🎭 '+Math.ceil(cd/1000)+'초'; }
       else { btnShift.disabled = false; btnShift.textContent = '🎭 변신'; }
     } else { btnShift.classList.add('hidden'); }
@@ -2878,10 +2886,11 @@
     }
     $('overlayShift').classList.remove('hidden');
   }
+  const SHIFT_DELAY = 3700;
   function doShift(id){
-    S.disguiseId = id;
-    S.disguiseUntil = Date.now() + SHIFT_DUR;
-    S.shiftCdUntil = Date.now() + SHIFT_CD;
+    // 바로 변신하지 않고 3.7초 뒤에 변신됨
+    S.shiftPendingId = id;
+    S.shiftReadyAt = Date.now() + SHIFT_DELAY;
     $('overlayShift').classList.add('hidden');
   }
   function cancelShift(){ $('overlayShift').classList.add('hidden'); }
