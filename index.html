@@ -1429,7 +1429,7 @@
     presenceInterval = setInterval(()=>{
       if(!S.fdb || !S.roomCode) return;
       if(!(S.view==='playing'||S.view==='meeting')) return;
-      try{ roomRef('pos/'+S.myId).set({ x: Math.round(S.myPos.x), y: Math.round(S.myPos.y), t: Date.now(), hidden: (S.vented||S.invisible)?1:0, disguise: S.disguiseId||null }); }catch(e){}
+      try{ roomRef('pos/'+S.myId).set({ x: Math.round(S.myPos.x), y: Math.round(S.myPos.y), t: Date.now(), hidden: (S.vented||S.invisible)?1:0, disguise: S.disguiseId||null, shifting: S.shiftPendingId?1:0 }); }catch(e){}
     }, 120);
   }
 
@@ -1447,7 +1447,7 @@
       let name = p.name, color = p.color;
       // 현상변환자: 변신 대상 모습으로 보임
       if(pos.disguise && players[pos.disguise]){ name = players[pos.disguise].name; color = players[pos.disguise].color; }
-      out.push({ id, x: pos.x, y: pos.y, name, color, alive: p.alive });
+      out.push({ id, x: pos.x, y: pos.y, name, color, alive: p.alive, shifting: !!pos.shifting, disguise: pos.disguise||null });
     }
     return out;
   }
@@ -1628,6 +1628,13 @@
       }
       S.peerPrevX[peer.id] = peer.x;
       S.peerWalk[peer.id] = moving ? (S.peerWalk[peer.id]||0) + 0.4 : 0;
+      // 남이 변신 준비 중이면 소용돌이, 변신 완료 순간이면 터짐
+      S.peerPrevDisg = S.peerPrevDisg || {};
+      if(peer.shifting && peer.alive){ drawShiftAura(peer.x, peer.y, 0.6 + 0.4*Math.abs(Math.sin(performance.now()/300)), performance.now()); }
+      if(S.peerPrevDisg[peer.id] !== peer.disguise){
+        if(peer.disguise){ S.shiftBursts = S.shiftBursts||[]; S.shiftBursts.push({ x:peer.x, y:peer.y, t:performance.now() }); }
+        S.peerPrevDisg[peer.id] = peer.disguise;
+      }
       if(peer.alive){
         drawCrewmate(mctx, peer.x, peer.y, colorHex(peer.color), peer.name, true, false, S.peerFacing[peer.id]||1, S.peerWalk[peer.id]||0);
       } else {
@@ -1651,6 +1658,15 @@
     } else {
       drawGhost(mctx, S.myPos.x, S.myPos.y, colorHex(S.myColorId), S.myName + ' (나·유령)', true);
     }
+
+    // 변신 준비 중 이펙트 (내 캐릭터 주위에 소용돌이)
+    if(S.shiftPendingId && myAlive){
+      const prog = clamp(1 - ((S.shiftReadyAt||0) - Date.now())/SHIFT_DELAY, 0, 1);
+      drawShiftAura(S.myPos.x, S.myPos.y, prog, performance.now());
+    }
+    // 변신 완료 순간 터짐 이펙트 (내 것 + 남이 본 것)
+    S.shiftBursts = (S.shiftBursts||[]).filter(b => performance.now() - b.t < 620);
+    for(const b of S.shiftBursts){ drawShiftBurst(b.x, b.y, performance.now() - b.t); }
 
     // kill effects (flashy bursts over recent deaths)
     const nowFx = performance.now();
@@ -2146,6 +2162,8 @@
       S.disguiseUntil = now + SHIFT_DUR;
       S.shiftCdUntil = now + SHIFT_CD;
       S.shiftPendingId = null;
+      S.shiftBursts = S.shiftBursts || [];
+      S.shiftBursts.push({ x:S.myPos.x, y:S.myPos.y, t:performance.now() });
     }
 
     // kill button (+ cooldown countdown)
@@ -2814,6 +2832,73 @@
       mctx.beginPath(); mctx.arc(px, py, sz, 0, Math.PI*2); mctx.fill();
     }
 
+    mctx.globalAlpha = 1;
+    mctx.restore();
+  }
+
+  // 현상변환자: 변신 준비 중 소용돌이 오라 (prog 0→1)
+  function drawShiftAura(x, y, prog, now){
+    const R = PLAYER_R;
+    mctx.save();
+    mctx.translate(x, y - R*0.3);
+    // 아래에서 위로 차오르는 보랏빛 광채
+    mctx.globalAlpha = 0.25 + prog*0.35;
+    const rad = R*(1.4 + prog*0.6);
+    const cg = mctx.createRadialGradient(0,0,0, 0,0, rad);
+    cg.addColorStop(0, 'rgba(210,150,255,0.55)');
+    cg.addColorStop(0.6, 'rgba(160,90,255,0.35)');
+    cg.addColorStop(1, 'rgba(120,60,220,0)');
+    mctx.fillStyle = cg; mctx.beginPath(); mctx.arc(0,0, rad, 0, Math.PI*2); mctx.fill();
+    // 빙글빙글 도는 반짝이 입자
+    mctx.globalAlpha = 0.85;
+    const N = 9;
+    for(let i=0;i<N;i++){
+      const a = now/380 + i*(Math.PI*2/N);
+      const rr = R*(1.15 + 0.25*Math.sin(now/220 + i));
+      const px = Math.cos(a)*rr, py = Math.sin(a)*rr*0.85;
+      const s = 2 + 2.2*((i%3===0)?1.4:1) * (0.5+0.5*Math.sin(now/160+i));
+      mctx.fillStyle = i%2 ? '#e6c2ff' : '#a56bff';
+      mctx.shadowColor = '#c88bff'; mctx.shadowBlur = 8;
+      mctx.beginPath(); mctx.arc(px, py, s, 0, Math.PI*2); mctx.fill();
+    }
+    mctx.shadowBlur = 0;
+    // 차오르는 진행 링
+    mctx.globalAlpha = 0.9;
+    mctx.strokeStyle = '#d9b3ff'; mctx.lineWidth = 3; mctx.lineCap='round';
+    mctx.beginPath(); mctx.arc(0, 0, R*1.5, -Math.PI/2, -Math.PI/2 + Math.PI*2*prog); mctx.stroke();
+    mctx.globalAlpha = 1;
+    mctx.restore();
+  }
+
+  // 현상변환자: 변신 완료 순간 펑! (age ms, 0~620)
+  function drawShiftBurst(x, y, age){
+    const R = PLAYER_R;
+    const k = clamp(age/620, 0, 1);
+    mctx.save();
+    mctx.translate(x, y - R*0.3);
+    // 확 퍼지는 보라 링
+    mctx.globalAlpha = (1-k)*0.9;
+    mctx.strokeStyle = '#d9a6ff'; mctx.lineWidth = 6*(1-k)+1;
+    mctx.beginPath(); mctx.arc(0,0, R*0.6 + R*2.6*k, 0, Math.PI*2); mctx.stroke();
+    // 안쪽 흰 섬광
+    if(k < 0.4){
+      const fk = k/0.4;
+      mctx.globalAlpha = (1-fk)*0.9;
+      const rad = R*(1.6)*(0.4+fk);
+      const cg = mctx.createRadialGradient(0,0,0, 0,0, rad);
+      cg.addColorStop(0, '#ffffff'); cg.addColorStop(0.5, 'rgba(200,140,255,0.7)'); cg.addColorStop(1, 'rgba(160,90,255,0)');
+      mctx.fillStyle = cg; mctx.beginPath(); mctx.arc(0,0, rad, 0, Math.PI*2); mctx.fill();
+    }
+    // 사방으로 튀는 반짝이
+    mctx.globalAlpha = (1-k);
+    for(let i=0;i<12;i++){
+      const a = i*(Math.PI*2/12) + 0.3;
+      const d = R*(0.5 + 3.2*k);
+      const px = Math.cos(a)*d, py = Math.sin(a)*d*0.9;
+      const s = (2.6)*(1-k)+0.5;
+      mctx.fillStyle = i%2 ? '#f0d8ff' : '#b57bff';
+      mctx.beginPath(); mctx.arc(px, py, s, 0, Math.PI*2); mctx.fill();
+    }
     mctx.globalAlpha = 1;
     mctx.restore();
   }
