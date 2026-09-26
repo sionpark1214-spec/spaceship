@@ -278,6 +278,7 @@
 
   .action-btn.cctv{ background: var(--cyan); color:#04262e; }
   .action-btn.vent{ background:#3a4170; color:var(--text); border:1px solid var(--line); }
+  .imp-opt.sel{ background: var(--accent); color:#3a2c02; border-color: var(--accent); }
   .action-btn.invis{ background:#8aa0c8; color:#0e1330; }
   .action-btn.shift{ background:#b98bff; color:#20103a; }
   .shift-dest{ display:flex; align-items:center; gap:10px; background:var(--panel-3); border:1px solid var(--line); border-radius:12px; padding:10px 13px; margin-bottom:8px; cursor:pointer; font-size:15px; }
@@ -522,11 +523,30 @@
       <div class="color-picker" id="colorPicker"></div>
       <div class="lobby-actions">
         <button class="btn btn-ghost btn-small" id="btnLeaveLobby">나가기</button>
-        <div id="lobbyHostControls">
+        <div id="lobbyHostControls" style="display:flex;gap:10px;">
+          <button class="btn btn-ghost btn-small" id="btnSettings">⚙ 설정</button>
           <button class="btn btn-primary btn-small" id="btnStartGame" disabled>▶ 게임 시작</button>
         </div>
         <div id="lobbyGuestNote" class="lobby-footer-note hidden" style="margin:0;">호스트가 시작하기를 기다리는 중...</div>
       </div>
+    </div>
+  </div>
+
+  <!-- SETTINGS OVERLAY (host) -->
+  <div id="overlaySettings" class="overlay hidden">
+    <div class="meeting-panel" style="width:min(90vw,360px);">
+      <div class="meeting-header">
+        <p class="eyebrow">방장 설정</p>
+        <h2 style="margin:2px 0;font-size:20px;">⚙ 게임 설정</h2>
+      </div>
+      <div class="picker-label" style="margin-top:6px;">😈 정체불명 인원</div>
+      <div class="row" id="impCountRow" style="gap:10px;">
+        <button class="btn btn-ghost btn-small imp-opt" data-n="1">1명</button>
+        <button class="btn btn-ghost btn-small imp-opt" data-n="2">2명</button>
+        <button class="btn btn-ghost btn-small imp-opt" data-n="3">3명</button>
+      </div>
+      <p class="subtitle" id="settingsHint" style="margin:12px 0 0;text-align:center;">참가 인원보다 적어야 해요.</p>
+      <button class="btn btn-primary btn-small" id="btnSettingsClose" style="width:100%;margin-top:14px;">확인</button>
     </div>
   </div>
 
@@ -1115,6 +1135,7 @@
     if(v!=='playing' && S.vented) exitVent();
     if(v!=='playing') $('overlayRole').classList.add('hidden');
     if(v!=='playing') $('overlayShift').classList.add('hidden');
+    if(v!=='lobby') $('overlaySettings').classList.add('hidden');
   }
 
   function enterLobby(){
@@ -1140,6 +1161,32 @@
     const startBtn = $('btnStartGame');
     startBtn.disabled = count < 1;
     startBtn.textContent = count <= 1 ? '▶ 혼자 시작 (테스트)' : '▶ 게임 시작';
+    $('btnSettings').textContent = '⚙ 설정 (정체불명 ' + (S.roomData.impCount || defaultImpCount(count)) + '명)';
+    if(!$('overlaySettings').classList.contains('hidden')) renderImpOpts();
+  }
+
+  function defaultImpCount(n){ return n >= 14 ? 3 : (n >= 7 ? 2 : 1); }
+  function openSettings(){ if(!S.isHost) return; $('overlaySettings').classList.remove('hidden'); renderImpOpts(); }
+  function closeSettings(){ $('overlaySettings').classList.add('hidden'); }
+  function renderImpOpts(){
+    if(!S.roomData) return;
+    const cnt = Object.keys(S.roomData.players||{}).length;
+    const maxImp = Math.max(1, Math.min(3, cnt-1));
+    const cur = S.roomData.impCount || defaultImpCount(cnt);
+    document.querySelectorAll('.imp-opt').forEach(b=>{
+      const n = parseInt(b.dataset.n);
+      b.classList.toggle('sel', n===cur);
+      b.disabled = n > maxImp;
+      b.style.opacity = n > maxImp ? '0.35' : '';
+    });
+    $('settingsHint').textContent = '현재 ' + cnt + '명 · 정체불명 최대 ' + maxImp + '명까지';
+  }
+  async function setImpCount(n){
+    if(!S.isHost || !S.roomData) return;
+    const cnt = Object.keys(S.roomData.players||{}).length;
+    if(n > Math.max(1, Math.min(3, cnt-1))) return;
+    try{ await roomRef('impCount').set(n); }catch(e){}
+    renderImpOpts();
   }
 
   function renderColorPicker(){
@@ -1183,7 +1230,8 @@
     const ids = Object.keys(S.roomData.players || {});
     if(ids.length < 1) return;
     const n = ids.length;
-    const impostorCount = n >= 14 ? 3 : (n >= 7 ? 2 : 1);
+    const chosen = S.roomData.impCount || defaultImpCount(n);
+    const impostorCount = Math.max(1, Math.min(chosen, Math.max(1, n-1)));
     // 제대로 된 무작위 셔플 (Fisher-Yates)
     const shuffled = ids.slice();
     for(let i = shuffled.length - 1; i > 0; i--){
@@ -3329,6 +3377,9 @@
   $('btnRoomsRefresh').addEventListener('click', loadRoomList);
   $('btnRoomsClose').addEventListener('click', closeRoomList);
   $('btnStartGame').addEventListener('click', startGame);
+  $('btnSettings').addEventListener('click', openSettings);
+  $('btnSettingsClose').addEventListener('click', closeSettings);
+  document.querySelectorAll('.imp-opt').forEach(b=> b.addEventListener('click', ()=> setImpCount(parseInt(b.dataset.n))));
   $('btnKill').addEventListener('click', doKill);
   $('btnMeeting').addEventListener('click', callMeeting);
   $('btnReport').addEventListener('click', doReport);
