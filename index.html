@@ -287,6 +287,16 @@
 
   .action-btn.cctv{ background: var(--cyan); color:#04262e; }
   .action-btn.admin{ background:#7fd4ff; color:#04262e; }
+  .action-btn.vitals{ background:#ff7a9c; color:#3a0713; }
+  .vital-card{ background:#1b2145; border:1px solid var(--line); border-radius:12px; padding:10px; display:flex; flex-direction:column; align-items:center; gap:6px; }
+  .vital-card .vdot{ width:26px; height:26px; border-radius:50%; border:2px solid rgba(255,255,255,0.3); }
+  .vital-card .vname{ font-size:12px; font-weight:700; color:var(--text); max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .vital-card .vstat{ font-size:12px; font-weight:800; }
+  .vital-card.alive .vstat{ color:#48e6a0; }
+  .vital-card.dead{ opacity:0.65; }
+  .vital-card.dead .vstat{ color:#ff5470; }
+  .vital-card.alive .vdot{ animation: vpulse 1s ease-in-out infinite; }
+  @keyframes vpulse{ 0%,100%{ box-shadow:0 0 0 0 rgba(72,230,160,0.5);} 50%{ box-shadow:0 0 0 6px rgba(72,230,160,0);} }
   .action-btn.vent{ background:#3a4170; color:var(--text); border:1px solid var(--line); }
   .imp-opt.sel{ background: var(--accent); color:#3a2c02; border-color: var(--accent); }
   .action-btn.sabotage{ background:#ff3b6b; color:#fff; }
@@ -615,6 +625,7 @@
       <button class="action-btn vent hidden" id="btnVent">🕳 벤트</button>
       <button class="action-btn cctv hidden" id="btnCctv">📹 CCTV</button>
       <button class="action-btn admin hidden" id="btnAdmin">🗺 지도</button>
+      <button class="action-btn vitals hidden" id="btnVitals">❤️ 생체신호</button>
       <button class="action-btn task hidden" id="btnTask">🛠 미션</button>
       <button class="action-btn kill hidden" id="btnKill">🔪 제거하기</button>
       <button class="action-btn meeting" id="btnMeeting">🚨 긴급회의</button>
@@ -685,6 +696,19 @@
       </div>
       <canvas id="adminCanvas" style="width:100%;display:block;border-radius:12px;border:1px solid var(--line);background:#070a16;"></canvas>
       <button class="btn btn-ghost btn-small" id="btnAdminClose" style="width:100%;margin-top:12px;">닫기</button>
+    </div>
+  </div>
+
+  <!-- 생체신호 OVERLAY -->
+  <div id="overlayVitals" class="overlay hidden">
+    <div class="meeting-panel" style="width:min(96vw,520px);">
+      <div class="meeting-header">
+        <p class="eyebrow">의무실</p>
+        <h2 style="margin:2px 0;font-size:20px;">❤️ 생체신호</h2>
+        <p class="subtitle" style="margin:4px 0 0;">누가 살아있고 누가 죽었는지 실시간으로 보여줘</p>
+      </div>
+      <div id="vitalsGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;margin:14px 0 6px;"></div>
+      <button class="btn btn-ghost btn-small" id="btnVitalsClose" style="width:100%;margin-top:12px;">닫기</button>
     </div>
   </div>
 
@@ -925,6 +949,7 @@
   // 컴퓨터(모니터)가 있는 방에서 CCTV 사용 가능
   const CCTV_ROOMS = ['보안실','항법실','관리실','통신실'];
   const ADMIN_ROOMS = ['관리실'];   // 관리실에서 지도(방마다 인원수)를 볼 수 있음
+  const VITALS_ROOMS = ['의무실'];  // 의무실에서 생체신호(누가 살았는지)를 볼 수 있음
   // 환풍구(벤트) — 임포스터 전용 순간이동, 모두 연결됨
   const VENT_ROOMS = ['무기고','전기실','원자로','항법실','통신실','의무실'];
   const VENT_RANGE = 58;
@@ -1284,6 +1309,7 @@
     if(v!=='playing' && S.missionOpen) closeMission();
     if(v!=='playing' && S.cctvOpen) closeCctv();
     if(v!=='playing' && S.adminOpen) closeAdmin();
+    if(v!=='playing' && S.vitalsOpen) closeVitals();
     if(v!=='playing' && S.fixOpen) closeFix();
     if(v!=='playing' && S.sabMenuOpen) closeSabMenu();
     if(v!=='playing') $('sabotageBanner').classList.add('hidden');
@@ -2393,7 +2419,7 @@
     if(S.view !== 'playing' || !S.roomData){
       btnKill.classList.add('hidden'); btnTask.classList.add('hidden'); btnCctv.classList.add('hidden'); btnReport.classList.add('hidden'); btnVent.classList.add('hidden'); btnInvis.classList.add('hidden'); btnShift.classList.add('hidden');
       $('btnSabotage').classList.add('hidden'); $('btnFix').classList.add('hidden'); $('sabotageBanner').classList.add('hidden');
-      $('btnAdmin').classList.add('hidden');
+      $('btnAdmin').classList.add('hidden'); $('btnVitals').classList.add('hidden');
       return;
     }
     const me = S.roomData.players[S.myId];
@@ -2439,6 +2465,10 @@
     // 관리실 지도 버튼 (관리실 안에 있을 때)
     const canAdmin = myAlive && !S.missionOpen && rm && ADMIN_ROOMS.includes(rm.name);
     $('btnAdmin').classList.toggle('hidden', !canAdmin);
+
+    // 생체신호 버튼 (의무실 안에 있을 때)
+    const canVitals = myAlive && !S.missionOpen && rm && VITALS_ROOMS.includes(rm.name);
+    $('btnVitals').classList.toggle('hidden', !canVitals);
 
     // 시체 신고 버튼 (근처에 신고 안 된 시체가 있을 때)
     const bodyId = (myAlive && !S.missionOpen) ? nearestBody() : null;
@@ -3633,6 +3663,38 @@
     }
   }
   function roundRectC(ctx,x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+
+  // ============================================================
+  // ❤️ 생체신호 (Vitals) — 의무실에서 누가 살았는지 실시간 확인
+  // ============================================================
+  let vitalsTimer = null;
+  function openVitals(){
+    S.vitalsOpen = true;
+    $('overlayVitals').classList.remove('hidden');
+    renderVitals();
+    if(vitalsTimer) clearInterval(vitalsTimer);
+    vitalsTimer = setInterval(()=>{ if(S.vitalsOpen) renderVitals(); else { clearInterval(vitalsTimer); vitalsTimer=null; } }, 500);
+  }
+  function closeVitals(){
+    S.vitalsOpen = false;
+    if(vitalsTimer){ clearInterval(vitalsTimer); vitalsTimer = null; }
+    $('overlayVitals').classList.add('hidden');
+  }
+  function renderVitals(){
+    const grid = $('vitalsGrid'); if(!grid) return;
+    const players = (S.roomData && S.roomData.players) || {};
+    const ids = Object.keys(players).sort((a,b)=> (players[a].name||'').localeCompare(players[b].name||''));
+    grid.innerHTML = '';
+    for(const id of ids){
+      const p = players[id];
+      const card = document.createElement('div');
+      card.className = 'vital-card ' + (p.alive ? 'alive' : 'dead');
+      card.innerHTML = '<div class="vdot" style="background:'+colorHex(p.color)+'"></div>'
+        + '<div class="vname">'+escapeHtml(p.name||'?')+'</div>'
+        + '<div class="vstat">'+(p.alive ? '💚 정상' : '💀 사망')+'</div>';
+      grid.appendChild(card);
+    }
+  }
   // 카메라가 설치된 방만 (전체 맵을 다 보여주지 않음)
   const CAMERAS = ['식당','원자로','전기실','항법실'];
   function drawCctv(){
@@ -4125,6 +4187,8 @@
   $('btnCctvClose').addEventListener('click', closeCctv);
   $('btnAdmin').addEventListener('click', openAdmin);
   $('btnAdminClose').addEventListener('click', closeAdmin);
+  $('btnVitals').addEventListener('click', openVitals);
+  $('btnVitalsClose').addEventListener('click', closeVitals);
   $('btnCopyInvite').addEventListener('click', copyInviteLink);
   $('btnLeaveLobby').addEventListener('click', leaveRoom);
   $('btnEndLeave').addEventListener('click', leaveRoom);
