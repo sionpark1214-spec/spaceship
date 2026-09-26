@@ -7,6 +7,10 @@
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Jua&family=Noto+Sans+KR:wght@400;500;700;900&family=Space+Mono:wght@400;700&display=swap');
 
+  /* 모바일에서 빠르게 눌러도 더블탭 확대가 안 되게 (iOS 포함) */
+  html, body{ touch-action: manipulation; }
+  button, .overlay, .meeting-panel, .mg-nub, .fix-switch, .shift-dest{ touch-action: manipulation; }
+
   :root{
     --void: #0a0e1e;
     --panel: #161b36;
