@@ -301,7 +301,8 @@
   .vital-card.alive .vdot{ animation: vpulse 1s ease-in-out infinite; }
   @keyframes vpulse{ 0%,100%{ box-shadow:0 0 0 0 rgba(72,230,160,0.5);} 50%{ box-shadow:0 0 0 6px rgba(72,230,160,0);} }
   .action-btn.vent{ background:#3a4170; color:var(--text); border:1px solid var(--line); }
-  .imp-opt.sel{ background: var(--accent); color:#3a2c02; border-color: var(--accent); }
+  .imp-opt.sel, .set-opt.sel{ background: var(--accent); color:#3a2c02; border-color: var(--accent); }
+  .set-opt{ flex:1; }
   .action-btn.sabotage{ background:#ff3b6b; color:#fff; }
   .action-btn.fix{ background:#ffd23f; color:#3a2c02; animation: reportPulse 0.8s ease-in-out infinite; }
   .action-btn.invis{ background:#8aa0c8; color:#0e1330; }
@@ -599,8 +600,30 @@
         <button class="btn btn-ghost btn-small imp-opt" data-n="2">2명</button>
         <button class="btn btn-ghost btn-small imp-opt" data-n="3">3명</button>
       </div>
-      <p class="subtitle" id="settingsHint" style="margin:12px 0 0;text-align:center;">참가 인원보다 적어야 해요.</p>
-      <button class="btn btn-primary btn-small" id="btnSettingsClose" style="width:100%;margin-top:14px;">확인</button>
+      <p class="subtitle" id="settingsHint" style="margin:8px 0 0;text-align:center;">참가 인원보다 적어야 해요.</p>
+
+      <div class="picker-label" style="margin-top:12px;">🔪 킬 쿨타임</div>
+      <div class="row" style="gap:8px;">
+        <button class="btn btn-ghost btn-small set-opt" data-set="killCd" data-v="10000">10초</button>
+        <button class="btn btn-ghost btn-small set-opt" data-set="killCd" data-v="20000">20초</button>
+        <button class="btn btn-ghost btn-small set-opt" data-set="killCd" data-v="30000">30초</button>
+      </div>
+
+      <div class="picker-label" style="margin-top:12px;">🏃 이동 속도</div>
+      <div class="row" style="gap:8px;">
+        <button class="btn btn-ghost btn-small set-opt" data-set="moveSpeed" data-v="0.7">느림</button>
+        <button class="btn btn-ghost btn-small set-opt" data-set="moveSpeed" data-v="1">보통</button>
+        <button class="btn btn-ghost btn-small set-opt" data-set="moveSpeed" data-v="1.4">빠름</button>
+      </div>
+
+      <div class="picker-label" style="margin-top:12px;">🛠 미션 개수</div>
+      <div class="row" style="gap:8px;">
+        <button class="btn btn-ghost btn-small set-opt" data-set="taskCount" data-v="3">3개</button>
+        <button class="btn btn-ghost btn-small set-opt" data-set="taskCount" data-v="5">5개</button>
+        <button class="btn btn-ghost btn-small set-opt" data-set="taskCount" data-v="7">7개</button>
+      </div>
+
+      <button class="btn btn-primary btn-small" id="btnSettingsClose" style="width:100%;margin-top:16px;">확인</button>
     </div>
   </div>
 
@@ -1388,6 +1411,10 @@
     if(!$('overlaySettings').classList.contains('hidden')) renderImpOpts();
   }
 
+  // 설정 기본값
+  const SETTING_DEFAULTS = { killCd: 12000, moveSpeed: 1, taskCount: 5 };
+  function getSetting(key){ return (S.roomData && S.roomData[key] != null) ? S.roomData[key] : SETTING_DEFAULTS[key]; }
+
   function defaultImpCount(n){ return n >= 14 ? 3 : (n >= 7 ? 2 : 1); }
   function openSettings(){ if(!S.isHost) return; $('overlaySettings').classList.remove('hidden'); renderImpOpts(); }
   function closeSettings(){ $('overlaySettings').classList.add('hidden'); }
@@ -1403,6 +1430,17 @@
       b.style.opacity = n > maxImp ? '0.35' : '';
     });
     $('settingsHint').textContent = '현재 ' + cnt + '명 · 정체불명 최대 ' + maxImp + '명까지';
+    // 나머지 설정(킬쿨/이동속도/미션수) 선택 표시
+    document.querySelectorAll('.set-opt').forEach(b=>{
+      const key = b.dataset.set;
+      const v = parseFloat(b.dataset.v);
+      b.classList.toggle('sel', getSetting(key) === v);
+    });
+  }
+  async function setSetting(key, v){
+    if(!S.isHost || !S.roomData) return;
+    try{ await roomRef(key).set(v); }catch(e){}
+    renderImpOpts();
   }
   async function setImpCount(n){
     if(!S.isHost || !S.roomData) return;
@@ -1532,7 +1570,7 @@
       updates['players/'+id+'/reported'] = null;
       updates['players/'+id+'/killerColor'] = null;
       // assign each player a random set of task spots
-      const spots = TASK_SPOTS.map(t=>t.id).sort(()=>Math.random()-0.5).slice(0, TASKS_PER_PLAYER);
+      const spots = TASK_SPOTS.map(t=>t.id).sort(()=>Math.random()-0.5).slice(0, getSetting('taskCount'));
       const taskMap = {};
       spots.forEach(sid => { taskMap[sid] = false; });
       updates['players/'+id+'/tasks'] = taskMap;
@@ -1745,7 +1783,8 @@
         if(S.joy && (Math.abs(S.joy.x) > 0.15 || Math.abs(S.joy.y) > 0.15)){ dx += S.joy.x; dy += S.joy.y; }
         if(dx!==0 || dy!==0){
           const len = Math.hypot(dx,dy);
-          const spd = alive ? MOVE_SPEED : MOVE_SPEED*1.15; // 유령은 살짝 빠름
+          const mult = getSetting('moveSpeed');   // 호스트 설정 속도 배율
+          const spd = (alive ? MOVE_SPEED*mult : MOVE_SPEED*1.15); // 유령은 살짝 빠름(고정)
           const stepX = (dx/len)*spd*dt;
           const stepY = (dy/len)*spd*dt;
           if(alive){
@@ -2605,7 +2644,7 @@
   async function doKill(){
     const targetId = $('btnKill').dataset.targetId;
     if(!targetId || !S.roomData) return;
-    S.killCooldownUntil = Date.now() + KILL_COOLDOWN_MS;
+    S.killCooldownUntil = Date.now() + getSetting('killCd');
     // 어몽어스식: 피해자에게 순간이동(붙기) + 그 자리에서 칼질
     const tpos = S.positions[targetId] || { x: S.myPos.x, y: S.myPos.y };
     S.myPos = { x: tpos.x, y: tpos.y };
@@ -4212,6 +4251,7 @@
   $('btnSettings').addEventListener('click', openSettings);
   $('btnSettingsClose').addEventListener('click', closeSettings);
   document.querySelectorAll('.imp-opt').forEach(b=> b.addEventListener('click', ()=> setImpCount(parseInt(b.dataset.n))));
+  document.querySelectorAll('.set-opt').forEach(b=> b.addEventListener('click', ()=> setSetting(b.dataset.set, parseFloat(b.dataset.v))));
   $('btnKill').addEventListener('click', doKill);
   $('btnMeeting').addEventListener('click', callMeeting);
   $('btnReport').addEventListener('click', doReport);
