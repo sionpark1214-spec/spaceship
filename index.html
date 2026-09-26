@@ -1034,13 +1034,17 @@
       if(ctx && ctx.state==='suspended'){ try{ ctx.resume(); }catch(e){} }
       return ctx;
     }
-    // 브라우저는 사용자가 한 번 눌러야 소리를 허용 → 아무거나 처음 누르면 오디오 켜고 "삡" 소리로 알려줌
+    // 브라우저(특히 아이폰)는 "누르는 그 순간"에 소리가 바로 나야 허용함 → 제스처 안에서 즉시 재생
     function unlock(){
       const c = ensure();
-      if(c && !unlocked){ unlocked = true; setTimeout(()=>{ try{ blip(); }catch(e){} }, 60); }
+      if(!c) return;
+      if(!unlocked){ unlocked = true; try{ blip(); }catch(e){} }   // 지연 없이 바로!
+      // 배경음악을 켜기로 해뒀는데 아직 안 나오고 있으면 지금 시작
+      try{ if(bgmOn && !bgmTimer && (S.view==='playing'||S.view==='meeting')) bgmStart(bgmMood); }catch(e){}
     }
     ['pointerdown','touchstart','touchend','mousedown','click','keydown'].forEach(ev=>
       window.addEventListener(ev, unlock, {passive:true}));
+    document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) ensure(); });
     function tone(freq, dur, type, vol, delay, slideTo){
       const c = ensure(); if(!c) return;
       const t0 = c.currentTime + (delay||0);
