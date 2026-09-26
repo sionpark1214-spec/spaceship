@@ -1115,6 +1115,10 @@
       success(){ tone(660,0.12,'sine',0.3,0); tone(880,0.14,'sine',0.3,0.11); tone(1180,0.16,'sine',0.26,0.24); },
       eject(){ tone(520,0.7,'sine',0.28,0,110); },
       win(){ tone(523,0.15,'triangle',0.3,0); tone(659,0.15,'triangle',0.3,0.15); tone(784,0.25,'triangle',0.3,0.3); },
+      step(hi){ tone(hi?150:120, 0.05, 'triangle', 0.10, 0); },   // 걷는 소리 (또각또각)
+      map(){ tone(700,0.08,'square',0.16,0); tone(980,0.09,'square',0.14,0.08); },  // 지도 삑삑
+      cctv(){ noise(0.12,0.12); tone(1200,0.05,'square',0.12,0.02); tone(1200,0.05,'square',0.1,0.14); },  // 카메라 지직
+      vent(dir){ tone(dir==='out'?300:640, 0.28, 'sine', 0.2, 0, dir==='out'?680:280); },  // 벤트 슈욱
     };
   })();
 
@@ -1809,7 +1813,10 @@
           S.myWalk = (S.myWalk || 0) + dt * 10;
           S.moving = true;
           S.lastMoveDir = { x: dx/len, y: dy/len };
-        }
+          // 걷는 소리 (일정 간격으로 또각또각)
+          S._stepAccum = (S._stepAccum || 0) + dt;
+          if(S._stepAccum >= 0.32){ S._stepAccum = 0; S._stepHi = !S._stepHi; SFX.step(S._stepHi); }
+        } else { S._stepAccum = 0.32; }
       }
       if(!S.moving) S.myWalk = 0; // 멈추면 걷기 애니메이션 리셋 (흔들림 방지)
     }
@@ -3351,6 +3358,7 @@
     const vid = $('btnVent').dataset.ventId;
     const v = VENTS.find(x=>x.id===vid); if(!v) return;
     S.vented = true;
+    SFX.vent('in');
     S.myPos = { x: v.x, y: v.y };
     // 점프해서 들어가는 애니메이션 → 끝나면 목적지 목록 열기
     S.ventFx = { x: v.x, y: v.y, t: performance.now(), dir: 'in' };
@@ -3372,11 +3380,13 @@
   }
   function ventTo(vid){
     const v = VENTS.find(x=>x.id===vid); if(!v) return;
+    SFX.vent('in');
     S.myPos = { x: v.x, y: v.y };
     renderVentList(); // 새 위치 기준으로 목록 갱신
   }
   function exitVent(){
     $('overlayVent').classList.add('hidden');
+    if(S.vented) SFX.vent('out');
     // 현재 벤트에서 폴짝 튀어나오는 애니메이션
     S.ventFx = { x: S.myPos.x, y: S.myPos.y, t: performance.now(), dir: 'out' };
     S.vented = false;
@@ -3667,6 +3677,7 @@
   const cctvCtx = cctvCanvas.getContext('2d');
   function openCctv(){
     S.cctvOpen = true;
+    SFX.cctv();
     $('overlayCctv').classList.remove('hidden');
     // 캔버스 크기 맵 비율에 맞춤
     const cssW = Math.min(580, window.innerWidth*0.9);
@@ -3692,6 +3703,7 @@
   const adminCtx = adminCanvas.getContext('2d');
   function openAdmin(){
     S.adminOpen = true;
+    SFX.map();
     $('overlayAdmin').classList.remove('hidden');
     const cssW = Math.min(580, window.innerWidth*0.9);
     const cssH = cssW * (MAP_H/MAP_W);
