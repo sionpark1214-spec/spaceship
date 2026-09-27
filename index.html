@@ -306,6 +306,7 @@
   .action-btn.sabotage{ background:#ff3b6b; color:#fff; }
   .action-btn.infect{ background:#6ab04c; color:#0a2010; }
   .action-btn.arrest{ background:#5c8dff; color:#04123a; }
+  .action-btn.rescue{ background:#48e6a0; color:#053322; }
   .action-btn.fix{ background:#ffd23f; color:#3a2c02; animation: reportPulse 0.8s ease-in-out infinite; }
   .action-btn.invis{ background:#8aa0c8; color:#0e1330; }
   #sabotageBanner{
@@ -665,6 +666,7 @@
       <button class="action-btn task hidden" id="btnTask">🛠 미션</button>
       <button class="action-btn infect hidden" id="btnInfect">🧟 감염</button>
       <button class="action-btn arrest hidden" id="btnArrest">🚨 체포</button>
+      <button class="action-btn rescue hidden" id="btnRescue">🔓 구출</button>
       <button class="action-btn kill hidden" id="btnKill">🔪 제거하기</button>
       <button class="action-btn meeting" id="btnMeeting">🚨 긴급회의</button>
     </div>
@@ -1552,6 +1554,7 @@
     updates['round'] = (S.roomData.round||0) + 1;
     for(const id of ids){
       updates['players/'+id+'/alive'] = true;
+      updates['players/'+id+'/caught'] = null;
       updates['players/'+id+'/bodyX'] = null; updates['players/'+id+'/bodyY'] = null;
       updates['players/'+id+'/reported'] = null; updates['players/'+id+'/tasks'] = null;
     }
@@ -1578,6 +1581,7 @@
     updates['round'] = (S.roomData.round||0) + 1;
     for(const id of ids){
       updates['players/'+id+'/alive'] = true;
+      updates['players/'+id+'/caught'] = null;
       updates['players/'+id+'/bodyX'] = null; updates['players/'+id+'/bodyY'] = null;
       updates['players/'+id+'/reported'] = null; updates['players/'+id+'/tasks'] = null;
     }
@@ -1652,6 +1656,7 @@
       updates['players/'+id+'/bodyY'] = null;
       updates['players/'+id+'/reported'] = null;
       updates['players/'+id+'/killerColor'] = null;
+      updates['players/'+id+'/caught'] = null;
       // assign each player a random set of task spots
       const spots = TASK_SPOTS.map(t=>t.id).sort(()=>Math.random()-0.5).slice(0, getSetting('taskCount'));
       const taskMap = {};
@@ -1827,7 +1832,7 @@
     if(gameMode()==='cops'){
       const c = isCop(S.myId);
       banner.className = 'role-banner ' + (c?'impostor':'crew');
-      banner.textContent = c ? '🚨 경찰' : (S.roomData.players[S.myId] && !S.roomData.players[S.myId].alive ? '🚔 잡힘' : '🦹 도둑');
+      banner.textContent = c ? '🚨 경찰' : (isCaught(S.myId) ? '🔒 잡힘' : '🦹 도둑');
       return;
     }
     const role = myRole();
@@ -1897,7 +1902,7 @@
     if(S.view === 'playing'){
       const alive = S.roomData && S.roomData.players[S.myId] ? S.roomData.players[S.myId].alive : true;
       S.moving = false;
-      if(!S.missionOpen && !S.cctvOpen && !S.vented){
+      if(!S.missionOpen && !S.cctvOpen && !S.vented && !amICaught()){
         let dx=0, dy=0;
         if(S.keys.up) dy -= 1;
         if(S.keys.down) dy += 1;
@@ -1908,7 +1913,11 @@
         if(dx!==0 || dy!==0){
           const len = Math.hypot(dx,dy);
           const mult = getSetting('moveSpeed');   // 호스트 설정 속도 배율
-          const spd = (alive ? MOVE_SPEED*mult : MOVE_SPEED*1.15); // 유령은 살짝 빠름(고정)
+          // 술래(좀비/경찰)는 조금 더 빨라야 잡을 수 있음
+          let chase = 1;
+          if(gameMode()==='zombie' && isZombie(S.myId)) chase = 1.18;
+          else if(gameMode()==='cops' && isCop(S.myId)) chase = 1.18;
+          const spd = (alive ? MOVE_SPEED*mult*chase : MOVE_SPEED*1.15); // 유령은 살짝 빠름(고정)
           const stepX = (dx/len)*spd*dt;
           const stepY = (dy/len)*spd*dt;
           if(alive){
@@ -2082,10 +2091,13 @@
       if(peer.alive){
         const pz = gameMode()==='zombie' && isZombie(peer.id);
         const pc = gameMode()==='cops' && isCop(peer.id);
+        const pcaught = gameMode()==='cops' && isCaught(peer.id);
         if(!pz && !pc) drawPet(peer.id, peer.x, peer.y, S.peerFacing[peer.id]||1);
         const pcol = pz?'#6ab04c':(pc?'#5c8dff':colorHex(peer.color));
-        const pname = (pz?'🧟 ':(pc?'🚨 ':''))+peer.name;
+        const pname = (pz?'🧟 ':(pc?'🚨 ':(pcaught?'🔒 ':'')))+peer.name;
+        if(pcaught) mctx.save(), mctx.globalAlpha=0.55;
         drawCrewmate(mctx, peer.x, peer.y, pcol, pname, true, false, S.peerFacing[peer.id]||1, S.peerWalk[peer.id]||0);
+        if(pcaught) mctx.restore();
       } else {
         drawGhost(mctx, peer.x, peer.y, colorHex(peer.color), peer.name, false);
       }
@@ -2106,6 +2118,7 @@
       const meC = gameMode()==='cops' && isCop(S.myId);
       if(meZ){ myCol = 'zombie'; myName = '🧟 ' + S.myName + ' (나)'; }
       else if(meC){ myCol = 'blue'; myName = '🚨 ' + S.myName + ' (나)'; }
+      else if(amICaught()){ myName = '🔒 ' + S.myName + ' (나·갇힘)'; }
       if(!S.disguiseId && !meZ && !meC) drawPet(S.myId, S.myPos.x, S.myPos.y, S.myFacing||1);
       if(S.invisible){ mctx.save(); mctx.globalAlpha = 0.4; drawCrewmate(mctx, S.myPos.x, S.myPos.y, colorHex(myCol), myName+' (투명)', true, true, S.myFacing||1, S.myWalk||0); mctx.restore(); }
       else { drawCrewmate(mctx, S.myPos.x, S.myPos.y, colorHex(myCol), myName, true, true, S.myFacing||1, S.myWalk||0); }
@@ -2615,7 +2628,7 @@
       const d = dist(S.myPos.x, S.myPos.y, pos.x, pos.y);
       if(d < bestD){ bestD = d; best = id; }
     }
-    return (best && bestD <= KILL_RANGE*1.2) ? best : null;
+    return (best && bestD <= KILL_RANGE*1.5) ? best : null;
   }
   async function doInfect(){
     const targetId = $('btnInfect').dataset.targetId;
@@ -2647,28 +2660,48 @@
     const players = S.roomData.players || {};
     let best=null, bestD=Infinity;
     for(const id in players){
-      if(id===S.myId || isCop(id) || !players[id].alive) continue;
+      if(id===S.myId || isCop(id) || isCaught(id) || !players[id].alive) continue;
       const pos = S.positions[id]; if(!pos) continue;
       const d = dist(S.myPos.x, S.myPos.y, pos.x, pos.y);
       if(d < bestD){ bestD = d; best = id; }
     }
-    return (best && bestD <= KILL_RANGE*1.2) ? best : null;
+    return (best && bestD <= KILL_RANGE*1.5) ? best : null;
   }
+  function isCaught(id){ const p = S.roomData && S.roomData.players && S.roomData.players[id]; return !!(p && p.caught); }
+  function amICaught(){ return gameMode()==='cops' && isCaught(S.myId); }
   async function doArrest(){
     const targetId = $('btnArrest').dataset.targetId;
     if(!targetId || !S.roomData || isCop(targetId)) return;
     SFX.kill();
     const tpos = S.positions[targetId];
     if(tpos){ S.shiftBursts = S.shiftBursts||[]; S.shiftBursts.push({ x:tpos.x, y:tpos.y, t:performance.now() }); }
-    try{ await roomRef('players/'+targetId+'/alive').set(false); }catch(e){}   // 잡히면 감옥(아웃)
+    try{ await roomRef('players/'+targetId+'/caught').set(true); }catch(e){}   // 감옥에 가둠
   }
-  // 경찰과 도둑 승패: 도둑 전멸 → 경찰 승리 / 시간 다 됨 → 도둑 승리
+  // 🔓 근처에 잡힌 도둑(구출 가능) 찾기
+  function nearestCaughtRobber(){
+    const players = S.roomData.players || {};
+    let best=null, bestD=Infinity;
+    for(const id in players){
+      if(id===S.myId || isCop(id) || !isCaught(id)) continue;
+      const pos = S.positions[id]; if(!pos) continue;
+      const d = dist(S.myPos.x, S.myPos.y, pos.x, pos.y);
+      if(d < bestD){ bestD = d; best = id; }
+    }
+    return (best && bestD <= KILL_RANGE*1.5) ? best : null;
+  }
+  async function doRescue(){
+    const targetId = $('btnRescue').dataset.targetId;
+    if(!targetId || !S.roomData) return;
+    SFX.success();
+    try{ await roomRef('players/'+targetId+'/caught').set(null); }catch(e){}   // 풀어줌!
+  }
+  // 경찰과 도둑 승패: 안 잡힌 도둑 전멸 → 경찰 승리 / 시간 다 됨 → 도둑 승리
   function resolveCopsEnd(){
     if(gameMode()!=='cops' || !S.roomData || S.roomData.status!=='playing') return;
     if(isSoloTest()) return;
     if(S._zEnding) return;
     const players = S.roomData.players || {};
-    const freeRobbers = Object.keys(players).filter(id=>!isCop(id) && players[id].alive).length;
+    const freeRobbers = Object.keys(players).filter(id=>!isCop(id) && !isCaught(id)).length;
     let outcome=null, reason=null;
     if(freeRobbers === 0){ outcome='cop'; reason='🚨 도둑을 모두 잡았어요!'; }
     else if(Date.now() > (S.roomData.cEndAt||0)){ outcome='robber'; reason='🦹 도둑이 끝까지 안 잡혔어요!'; }
@@ -2705,7 +2738,7 @@
     if(S.view !== 'playing' || !S.roomData){
       btnKill.classList.add('hidden'); btnTask.classList.add('hidden'); btnCctv.classList.add('hidden'); btnReport.classList.add('hidden'); btnVent.classList.add('hidden'); btnInvis.classList.add('hidden'); btnShift.classList.add('hidden');
       $('btnSabotage').classList.add('hidden'); $('btnFix').classList.add('hidden'); $('sabotageBanner').classList.add('hidden');
-      $('btnAdmin').classList.add('hidden'); $('btnVitals').classList.add('hidden'); $('btnInfect').classList.add('hidden'); $('btnArrest').classList.add('hidden');
+      $('btnAdmin').classList.add('hidden'); $('btnVitals').classList.add('hidden'); $('btnInfect').classList.add('hidden'); $('btnArrest').classList.add('hidden'); $('btnRescue').classList.add('hidden');
       return;
     }
     const me = S.roomData.players[S.myId];
@@ -2734,19 +2767,22 @@
           : ('🏃 도망쳐! · 남은 인간 '+humans+'명 · '+left+'초 버티면 승리!');
       } else { // cops
         $('btnInfect').classList.add('hidden');
-        const meCop = isCop(S.myId), meCaught = !myAlive;
-        if(meCop){ const t=nearestRobber(); $('btnArrest').classList.toggle('hidden', !t); $('btnArrest').dataset.targetId = t||''; }
-        else $('btnArrest').classList.add('hidden');
+        const meCop = isCop(S.myId), meCaught = amICaught();
+        // 경찰: 체포 버튼 / 안 잡힌 도둑: 구출 버튼 / 잡힌 도둑: 아무것도 (감옥)
+        if(meCop){ const t=nearestRobber(); $('btnArrest').classList.toggle('hidden', !t); $('btnArrest').dataset.targetId = t||''; $('btnRescue').classList.add('hidden'); }
+        else if(!meCaught){ const r=nearestCaughtRobber(); $('btnRescue').classList.toggle('hidden', !r); $('btnRescue').dataset.targetId = r||''; $('btnArrest').classList.add('hidden'); }
+        else { $('btnArrest').classList.add('hidden'); $('btnRescue').classList.add('hidden'); }
         resolveCopsEnd();
         const left = Math.max(0, Math.ceil(((S.roomData.cEndAt||0)-now)/1000));
-        const robbers = Object.keys(S.roomData.players||{}).filter(id=>!isCop(id) && S.roomData.players[id].alive).length;
-        $('sabotageBanner').style.background = meCop ? 'rgba(92,141,255,0.92)' : 'rgba(255,160,20,0.92)';
-        $('sabotageBanner').innerHTML = meCop ? ('🚨 도둑을 잡아! · 남은 도둑 '+robbers+'명 · '+left+'초')
-          : (meCaught ? ('🚔 잡혔다! 유령이 되어 구경 · 남은 도둑 '+robbers+'명') : ('🦹 도망쳐! · 남은 도둑 '+robbers+'명 · '+left+'초 버티면 승리!'));
+        const robbers = Object.keys(S.roomData.players||{}).filter(id=>!isCop(id) && !isCaught(id)).length;
+        const caughtN = Object.keys(S.roomData.players||{}).filter(id=>!isCop(id) && isCaught(id)).length;
+        $('sabotageBanner').style.background = meCop ? 'rgba(92,141,255,0.92)' : (meCaught ? 'rgba(120,120,140,0.92)' : 'rgba(255,160,20,0.92)');
+        $('sabotageBanner').innerHTML = meCop ? ('🚨 도둑을 잡아! · 안 잡힌 도둑 '+robbers+'명 · '+left+'초')
+          : (meCaught ? ('🔒 잡혔어! 친구가 구해주길 기다려… ('+caughtN+'명 갇힘)') : ('🦹 도망치고 친구도 구출해! · 남은 도둑 '+robbers+'명 · '+left+'초'));
       }
       return;
     }
-    $('btnInfect').classList.add('hidden'); $('btnArrest').classList.add('hidden');
+    $('btnInfect').classList.add('hidden'); $('btnArrest').classList.add('hidden'); $('btnRescue').classList.add('hidden');
     $('sabotageBanner').style.background = '';
 
     // 투명화/변신 자동 종료
@@ -4414,6 +4450,7 @@
       updates['players/'+id+'/bodyY'] = null;
       updates['players/'+id+'/reported'] = null;
       updates['players/'+id+'/killerColor'] = null;
+      updates['players/'+id+'/caught'] = null;
     }
     await roomRef('').update(updates);
     S.lastShownResultKey = null;
@@ -4512,6 +4549,7 @@
   $('btnKill').addEventListener('click', doKill);
   $('btnInfect').addEventListener('click', doInfect);
   $('btnArrest').addEventListener('click', doArrest);
+  $('btnRescue').addEventListener('click', doRescue);
   $('btnMeeting').addEventListener('click', callMeeting);
   $('btnReport').addEventListener('click', doReport);
   $('btnVent').addEventListener('click', enterVent);
