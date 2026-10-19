@@ -931,6 +931,24 @@
     {id:'alien',e:'👽', name:'외계인'},
   ];
   function petEmoji(id){ const p = PET_OPTIONS.find(x=>x.id===id); return (p && p.id!=='none') ? p.e : null; }
+
+  // 🤖 AI 봇 — 호스트가 시작하면 빈 자리를 채움 (최대 5명)
+  const BOT_NAMES = ['민준','서연','도윤','하은','지호','수아','예준','지유','건우','채원','유준','소율','은우','다인','현서','지안','시우','하린','주원','나윤'];
+  const MAX_BOTS = 5, TARGET_PLAYERS = 6;
+  function makeBots(existingPlayers, count){
+    const usedColors = new Set(Object.values(existingPlayers).map(p=>p.color));
+    const usedNames = new Set(Object.values(existingPlayers).map(p=>p.name));
+    const availColors = COLORS.map(c=>c.id).filter(c=>!usedColors.has(c));
+    const availNames = BOT_NAMES.filter(n=>!usedNames.has(n));
+    const bots = [];
+    for(let i=0;i<count;i++){
+      const id = 'bot_' + Math.random().toString(36).slice(2,8);
+      const color = availColors.length ? availColors.splice(Math.floor(Math.random()*availColors.length),1)[0] : COLORS[Math.floor(Math.random()*COLORS.length)].id;
+      const name = availNames.length ? availNames.splice(Math.floor(Math.random()*availNames.length),1)[0] : ('AI'+(i+1));
+      bots.push({ id, name, color });
+    }
+    return bots;
+  }
   const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   const PLAYER_R = 18;
   const MOVE_SPEED = 360; // px/sec
@@ -1535,7 +1553,8 @@
   // Game start (host only)
   // ============================================================
   const ZOMBIE_SURVIVE_MS = 90000;   // 인간이 버텨야 하는 시간
-  async function startZombieGame(ids){
+  async function startZombieGame(ids, botDefs){
+    const botById = {}; (botDefs||[]).forEach(b=> botById[b.id]=b);
     const n = ids.length;
     const shuffled = ids.slice();
     for(let i=shuffled.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); const t=shuffled[i]; shuffled[i]=shuffled[j]; shuffled[j]=t; }
@@ -1553,6 +1572,7 @@
     updates['winner'] = null; updates['winReason'] = null; updates['pos'] = null;
     updates['round'] = (S.roomData.round||0) + 1;
     for(const id of ids){
+      if(botById[id]){ updates['players/'+id+'/name']=botById[id].name; updates['players/'+id+'/color']=botById[id].color; updates['players/'+id+'/bot']=true; }
       updates['players/'+id+'/alive'] = true;
       updates['players/'+id+'/caught'] = null;
       updates['players/'+id+'/bodyX'] = null; updates['players/'+id+'/bodyY'] = null;
@@ -1562,7 +1582,8 @@
   }
 
   const COPS_SURVIVE_MS = 90000;
-  async function startCopsGame(ids){
+  async function startCopsGame(ids, botDefs){
+    const botById = {}; (botDefs||[]).forEach(b=> botById[b.id]=b);
     const n = ids.length;
     const shuffled = ids.slice();
     for(let i=shuffled.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); const t=shuffled[i]; shuffled[i]=shuffled[j]; shuffled[j]=t; }
@@ -1580,6 +1601,7 @@
     updates['winner'] = null; updates['winReason'] = null; updates['pos'] = null;
     updates['round'] = (S.roomData.round||0) + 1;
     for(const id of ids){
+      if(botById[id]){ updates['players/'+id+'/name']=botById[id].name; updates['players/'+id+'/color']=botById[id].color; updates['players/'+id+'/bot']=true; }
       updates['players/'+id+'/alive'] = true;
       updates['players/'+id+'/caught'] = null;
       updates['players/'+id+'/bodyX'] = null; updates['players/'+id+'/bodyY'] = null;
@@ -1590,10 +1612,15 @@
 
   async function startGame(){
     if(!S.isHost || !S.roomData) return;
-    const ids = Object.keys(S.roomData.players || {});
-    if(ids.length < 1) return;
-    if((S.roomData.mode||'mafia') === 'zombie'){ return startZombieGame(ids); }
-    if((S.roomData.mode||'mafia') === 'cops'){ return startCopsGame(ids); }
+    const realIds = Object.keys(S.roomData.players || {});
+    if(realIds.length < 1) return;
+    // 빈 자리를 AI 봇으로 채움 (최대 5명, 총 6명 목표)
+    const botDefs = makeBots(S.roomData.players, Math.max(0, Math.min(MAX_BOTS, TARGET_PLAYERS - realIds.length)));
+    const botIdSet = new Set(botDefs.map(b=>b.id));
+    const botDefById = {}; botDefs.forEach(b=> botDefById[b.id]=b);
+    const ids = realIds.concat(botDefs.map(b=>b.id));
+    if((S.roomData.mode||'mafia') === 'zombie'){ return startZombieGame(ids, botDefs); }
+    if((S.roomData.mode||'mafia') === 'cops'){ return startCopsGame(ids, botDefs); }
     const n = ids.length;
     const chosen = S.roomData.impCount || defaultImpCount(n);
     const impostorCount = Math.max(1, Math.min(chosen, Math.max(1, n-1)));
@@ -1605,7 +1632,7 @@
     }
     // '시온'은 정체불명이 훨씬 자주 걸림 (85% 확률로 우선 배정) 😏
     const players = S.roomData.players;
-    const sionIds = ids.filter(id => (players[id].name||'').trim() === '시온');
+    const sionIds = ids.filter(id => players[id] && (players[id].name||'').trim() === '시온');
     const picked = [];
     if(sionIds.length && Math.random() < 0.85){
       picked.push(sionIds[Math.floor(Math.random()*sionIds.length)]);
@@ -1651,6 +1678,7 @@
     updates['sabPool'] = sabTypes.slice(0, 3);
     updates['round'] = (S.roomData.round||0) + 1;
     for(const id of ids){
+      if(botIdSet.has(id)){ updates['players/'+id+'/name']=botDefById[id].name; updates['players/'+id+'/color']=botDefById[id].color; updates['players/'+id+'/bot']=true; }
       updates['players/'+id+'/alive'] = true;
       updates['players/'+id+'/bodyX'] = null;
       updates['players/'+id+'/bodyY'] = null;
@@ -1737,6 +1765,7 @@
     renderHudPlayerList();
     startGameLoop();
     SFX.bgmStart('play');
+    if(S.isHost) startBots();
   }
 
   function myRole(){
@@ -2706,6 +2735,152 @@
     if(freeRobbers === 0){ outcome='cop'; reason='🚨 도둑을 모두 잡았어요!'; }
     else if(Date.now() > (S.roomData.cEndAt||0)){ outcome='robber'; reason='🦹 도둑이 끝까지 안 잡혔어요!'; }
     if(outcome){ S._zEnding = true; try{ roomRef('').update({ status:'ended', winner:outcome, winReason:reason }); }catch(e){} }
+  }
+
+  // ============================================================
+  // 🤖 AI 봇 두뇌 (호스트만 돌림) — 사람처럼, 너무 잘하지도 못하지도 않게
+  // ============================================================
+  function botSpawnPos(){ const hub=ROOMS[HUB_INDEX]; return { x: hub.x+50+Math.random()*(hub.w-100), y: hub.y+50+Math.random()*(hub.h-100) }; }
+  function botLivePos(id){ const b=S.botBrains&&S.botBrains[id]; if(b) return {x:b.x,y:b.y}; const p=S.positions[id]; return p?{x:p.x,y:p.y}:null; }
+  function botNearest(b, ids){ let best=null,bd=Infinity; for(const id of ids){ const q=botLivePos(id); if(!q)continue; const d=Math.hypot(q.x-b.x,q.y-b.y); if(d<bd){bd=d;best={id,x:q.x,y:q.y,d};} } return best; }
+  function botMoveTo(b, tx, ty, mult, ghost){
+    const dt=0.16; const dx=tx-b.x, dy=ty-b.y; const d=Math.hypot(dx,dy); if(d<1) return 0;
+    const bx=b.x, by=b.y;
+    const step = Math.min(MOVE_SPEED*mult*b.speed*dt, d);
+    const nx=b.x+(dx/d)*step, ny=b.y+(dy/d)*step;
+    if(ghost){ b.x=clamp(nx,20,MAP_W-20); b.y=clamp(ny,20,MAP_H-20); return d; }
+    if(walkableAt(nx,b.y)) b.x=clamp(nx,PLAYER_R,MAP_W-PLAYER_R);
+    if(walkableAt(b.x,ny)) b.y=clamp(ny,PLAYER_R,MAP_H-PLAYER_R);
+    if(Math.hypot(b.x-bx,b.y-by) < 0.6) b.stuck=(b.stuck||0)+1; else b.stuck=0;
+    return d;
+  }
+  function botWander(b, now){
+    if(now < b.retargetAt && Math.hypot(b.tx-b.x,b.ty-b.y) > 26 && (b.stuck||0)<8) return;
+    const r = ROOMS[Math.floor(Math.random()*ROOMS.length)];
+    b.tx = r.x+40+Math.random()*(r.w-80); b.ty = r.y+40+Math.random()*(r.h-80);
+    b.retargetAt = now + 2200 + Math.random()*3200; b.stuck=0;
+  }
+  function freshBrain(id){
+    const sp = (S.positions[id]) || botSpawnPos();
+    return { x:sp.x, y:sp.y, tx:sp.x, ty:sp.y, retargetAt:0, actAt: Date.now()+1200+Math.random()*2500,
+             taskT:0, stuck:0, speed: 0.8 + Math.random()*0.16, react: 350 + Math.random()*750 };
+  }
+  function startBots(){ if(!S.isHost) return; stopBots(); S.botBrains={}; S.botLoop = setInterval(botTick, 160); }
+  function stopBots(){ if(S.botLoop){ clearInterval(S.botLoop); S.botLoop=null; } }
+
+  function botTick(){
+    if(!S.isHost || !S.roomData){ return; }
+    const players = S.roomData.players || {};
+    const st = S.roomData.status;
+    if(st==='meeting'){ botMeetingVote(players); return; }
+    if(st!=='playing'){ return; }
+    const mode = gameMode(); const now = Date.now();
+    S.botBrains = S.botBrains || {};
+    for(const id in players){
+      const p = players[id]; if(!p || !p.bot) continue;
+      let b = S.botBrains[id]; if(!b){ b = S.botBrains[id] = freshBrain(id); }
+      try{ botThink(id, p, b, mode, players, now); }catch(e){}
+      try{ roomRef('pos/'+id).set({ x:Math.round(b.x), y:Math.round(b.y), t:now, hidden:0, disguise:null }); }catch(e){}
+    }
+  }
+
+  function botThink(id, p, b, mode, players, now){
+    if(mode==='mafia'){
+      if(!p.alive){ botWander(b, now); botMoveTo(b, b.tx, b.ty, 1.0, true); return; }  // 유령
+      if(isImpostor(id)){
+        const crew = Object.keys(players).filter(q=> q!==id && players[q].alive && !isImpostor(q));
+        const tgt = botNearest(b, crew);
+        if(tgt && tgt.d < 420 && (b.stuck||0)<10){ b.tx=tgt.x; b.ty=tgt.y; } else botWander(b, now);
+        botMoveTo(b, b.tx, b.ty, 1.0);
+        if(tgt && tgt.d < KILL_RANGE*1.3 && now>(b.killCdUntil||0) && now>(b.actAt||0)){
+          if(Math.random()<0.6){ botKill(id, tgt.id, players); b.killCdUntil = now + getSetting('killCd'); }
+          b.actAt = now + b.react;
+        }
+      } else {
+        // 승무원 봇: 돌아다니면서 가끔 미션 완료 (벽 길찾기 문제 피하려 위치무관 타이머)
+        botWander(b, now); botMoveTo(b, b.tx, b.ty, 0.95);
+        if(!b.taskNextAt) b.taskNextAt = now + 6000 + Math.random()*9000;
+        if(now >= b.taskNextAt){
+          const t = players[id].tasks || {};
+          const todo = Object.keys(t).filter(k=> !t[k]);
+          if(todo.length) botCompleteTask(id, todo[Math.floor(Math.random()*todo.length)], players);
+          b.taskNextAt = now + 6000 + Math.random()*9000;
+        }
+      }
+    } else if(mode==='zombie'){
+      if(isZombie(id)){
+        const humans = Object.keys(players).filter(q=> !isZombie(q));
+        const tgt = botNearest(b, humans);
+        if(tgt && (b.stuck||0)<10){ b.tx=tgt.x; b.ty=tgt.y; } else botWander(b, now);
+        botMoveTo(b, b.tx, b.ty, 1.18);
+        if(tgt && tgt.d < KILL_RANGE*1.4 && now>(b.actAt||0)){ if(Math.random()<0.7){ try{ roomRef('zombieMap/'+tgt.id).set(true); }catch(e){} } b.actAt = now + b.react; }
+      } else {
+        const zs = Object.keys(players).filter(q=> isZombie(q));
+        const z = botNearest(b, zs);
+        if(z && z.d < 320){ b.tx = clamp(b.x+(b.x-z.x), 60, MAP_W-60); b.ty = clamp(b.y+(b.y-z.y), 60, MAP_H-60); b.retargetAt=now+400; }
+        else botWander(b, now);
+        botMoveTo(b, b.tx, b.ty, 1.0);
+      }
+    } else if(mode==='cops'){
+      if(p.caught) return;  // 감옥 — 못 움직임
+      if(isCop(id)){
+        const robs = Object.keys(players).filter(q=> !isCop(q) && players[q].alive && !players[q].caught);
+        const tgt = botNearest(b, robs);
+        if(tgt && (b.stuck||0)<10){ b.tx=tgt.x; b.ty=tgt.y; } else botWander(b, now);
+        botMoveTo(b, b.tx, b.ty, 1.18);
+        if(tgt && tgt.d < KILL_RANGE*1.4 && now>(b.actAt||0)){ if(Math.random()<0.7){ try{ roomRef('players/'+tgt.id+'/caught').set(true); }catch(e){} } b.actAt = now + b.react; }
+      } else {
+        const cops = Object.keys(players).filter(q=> isCop(q));
+        const c = botNearest(b, cops);
+        const caught = Object.keys(players).filter(q=> !isCop(q) && players[q].caught);
+        const cr = botNearest(b, caught);
+        if(cr && cr.d < 240 && (!c || c.d > 170)){ b.tx=cr.x; b.ty=cr.y; botMoveTo(b, b.tx, b.ty, 1.0);
+          if(cr.d < KILL_RANGE*1.4 && now>(b.actAt||0)){ try{ roomRef('players/'+cr.id+'/caught').set(null); }catch(e){} b.actAt=now+b.react; } }
+        else if(c && c.d < 320){ b.tx=clamp(b.x+(b.x-c.x),60,MAP_W-60); b.ty=clamp(b.y+(b.y-c.y),60,MAP_H-60); b.retargetAt=now+400; botMoveTo(b, b.tx, b.ty, 1.0); }
+        else { botWander(b, now); botMoveTo(b, b.tx, b.ty, 1.0); }
+      }
+    }
+  }
+
+  function botKill(killerId, victimId, players){
+    const vpos = botLivePos(victimId) || {x:0,y:0};
+    const updates = {};
+    updates['players/'+victimId+'/alive'] = false;
+    updates['players/'+victimId+'/bodyX'] = Math.round(vpos.x);
+    updates['players/'+victimId+'/bodyY'] = Math.round(vpos.y);
+    updates['players/'+victimId+'/killerColor'] = players[killerId] ? players[killerId].color : null;
+    if(S.roomData.roleMap && S.roomData.roleMap[victimId]==='noisemaker') updates['noiseAlert']={x:Math.round(vpos.x),y:Math.round(vpos.y),at:Date.now()};
+    const proj={}; for(const k in players) proj[k]={...players[k]}; if(proj[victimId]) proj[victimId].alive=false;
+    const outcome = checkWin(proj, S.roomData.impostorMap);
+    if(outcome){ updates['status']='ended'; updates['winner']=outcome; }
+    try{ roomRef('').update(updates); }catch(e){}
+  }
+  function botCompleteTask(id, spotId, players){
+    const me = players[id]; if(!me || !me.tasks || me.tasks[spotId]===true) return;
+    const updates={}; updates['players/'+id+'/tasks/'+spotId]=true; updates['players/'+id+'/tasksDone']=(me.tasksDone||0)+1;
+    const imp = S.roomData.impostorMap||{}; let done=0,total=0;
+    for(const q in players){ if(imp[q])continue; const t={...(players[q].tasks||{})}; if(q===id)t[spotId]=true; const ks=Object.keys(t); total+=ks.length; done+=ks.filter(k=>t[k]).length; }
+    if(total>0 && done>=total){ updates['status']='ended'; updates['winner']='crew'; }
+    try{ roomRef('').update(updates); }catch(e){}
+  }
+  function botMeetingVote(players){
+    const meeting = S.roomData.meeting; if(!meeting) return;
+    const votes = meeting.votes || {};
+    const key = meeting.startedAt;
+    S.botBrains = S.botBrains || {};
+    for(const id in players){
+      const p = players[id]; if(!p || !p.bot || !p.alive) continue;
+      let bb = S.botBrains[id]; if(!bb){ bb = S.botBrains[id] = freshBrain(id); }
+      if(bb._voteKey !== key){ bb._voteKey = key; bb._voteAt = Date.now() + 2000 + Math.random()*8000; bb._voted = false; }
+      if(bb._voted || votes[id]) continue;
+      if(Date.now() >= bb._voteAt){
+        const alive = Object.keys(players).filter(q=> players[q].alive && q!==id);
+        let choice = 'skip';
+        if(Math.random() < 0.4 && alive.length) choice = alive[Math.floor(Math.random()*alive.length)];
+        try{ roomRef('meeting/votes/'+id).set(choice); }catch(e){}
+        bb._voted = true;
+      }
+    }
   }
 
   function nearestMyTask(){
@@ -4430,6 +4605,7 @@
 
   async function restartGame(){
     if(!S.isHost || !S.roomData) return;
+    stopBots();
     const updates = {};
     updates['status'] = 'lobby';
     updates['impostorMap'] = null;
@@ -4445,6 +4621,7 @@
     updates['zEndAt'] = null;
     updates['copMap'] = null; updates['cEndAt'] = null;
     for(const id in S.roomData.players){
+      if(S.roomData.players[id].bot){ updates['players/'+id] = null; continue; }   // 봇은 대기실로 돌아갈 때 제거 (다음 판에 새로 참가)
       updates['players/'+id+'/alive'] = true;
       updates['players/'+id+'/bodyX'] = null;
       updates['players/'+id+'/bodyY'] = null;
@@ -4458,6 +4635,7 @@
 
   function backToLobbyView(){
     setView('lobby');
+    stopBots();
     SFX.bgmStop();
     renderLobby();
     startLobbyScene();
@@ -4507,17 +4685,20 @@
   // ============================================================
   function leaveRoom(){
     const code = S.roomCode, myId = S.myId;
-    // 방에서 나 자신을 빼고, 아무도 안 남으면 방을 삭제 (빈 방/끝난 방 정리)
+    stopBots();
+    // 방에서 나 자신을 빼고, (봇 제외) 아무도 안 남으면 방을 삭제
     if(code && myId && S.fdb){
       try{ S.fdb.ref('rooms/'+code+'/pos/'+myId).remove(); }catch(e){}
-      const others = (S.roomData && S.roomData.players)
-        ? Object.keys(S.roomData.players).filter(id => id !== myId) : [];
-      if(others.length === 0){
-        S.fdb.ref('rooms/'+code).remove().catch(()=>{});
+      const players = (S.roomData && S.roomData.players) || {};
+      const realOthers = Object.keys(players).filter(id => id !== myId && !players[id].bot);
+      if(realOthers.length === 0){
+        S.fdb.ref('rooms/'+code).remove().catch(()=>{});   // 봇만 남으니 방째로 삭제
       } else {
         const upd = {};
         upd['players/'+myId] = null;
-        if(S.roomData && S.roomData.hostId === myId) upd['hostId'] = others[0]; // 호스트 넘기기
+        // 호스트가 나가면 봇도 멈추니 정리
+        if(S.isHost){ for(const id in players){ if(players[id].bot){ upd['players/'+id]=null; upd['pos/'+id]=null; } } }
+        if(S.roomData && S.roomData.hostId === myId) upd['hostId'] = realOthers[0]; // 진짜 사람에게 호스트 넘기기
         S.fdb.ref('rooms/'+code).update(upd).catch(()=>{});
       }
     }
