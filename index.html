@@ -604,6 +604,16 @@
         <button class="btn btn-ghost btn-small set-opt" data-set="mode" data-mode="cops">🚔 경찰과 도둑</button>
       </div>
 
+      <div class="picker-label" style="margin-top:12px;">🤖 AI 봇 수</div>
+      <div class="row" style="gap:6px;flex-wrap:wrap;">
+        <button class="btn btn-ghost btn-small set-opt" data-set="botCount" data-v="0">0</button>
+        <button class="btn btn-ghost btn-small set-opt" data-set="botCount" data-v="1">1</button>
+        <button class="btn btn-ghost btn-small set-opt" data-set="botCount" data-v="2">2</button>
+        <button class="btn btn-ghost btn-small set-opt" data-set="botCount" data-v="3">3</button>
+        <button class="btn btn-ghost btn-small set-opt" data-set="botCount" data-v="4">4</button>
+        <button class="btn btn-ghost btn-small set-opt" data-set="botCount" data-v="5">5</button>
+      </div>
+
       <div class="picker-label" style="margin-top:12px;">😈 정체불명 인원</div>
       <div class="row" id="impCountRow" style="gap:10px;">
         <button class="btn btn-ghost btn-small imp-opt" data-n="1">1명</button>
@@ -1263,10 +1273,16 @@
       const color = pickColorFor({});
       S.myName = name; S.myColorId = color; S.roomCode = code; S.isHost = true;
 
+      // 대기실에 AI 봇을 바로 채워서 혼자여도 북적이게 (기본 5명)
+      const playersObj = { [S.myId]: { name, color, alive: true, joinedAt: Date.now() } };
+      const lobbyBots = makeBots(playersObj, Math.max(0, Math.min(MAX_BOTS, TARGET_PLAYERS - 1)));
+      lobbyBots.forEach(b=>{ playersObj[b.id] = { name:b.name, color:b.color, alive:true, bot:true, joinedAt:Date.now() }; });
+
       await S.fdb.ref('rooms/'+code).set({
         code, hostId: S.myId, status: 'lobby',
-        players: { [S.myId]: { name, color, alive: true, joinedAt: Date.now() } },
+        players: playersObj,
         impostorMap: null, meeting: null, lastEjected: null, winner: null,
+        botCount: lobbyBots.length,
         round: 0, createdAt: Date.now()
       });
       subscribeRoom();
@@ -1455,7 +1471,7 @@
   }
 
   // 설정 기본값
-  const SETTING_DEFAULTS = { killCd: 12000, moveSpeed: 1, taskCount: 5 };
+  const SETTING_DEFAULTS = { killCd: 12000, moveSpeed: 1, taskCount: 5, botCount: 5 };
   function getSetting(key){ return (S.roomData && S.roomData[key] != null) ? S.roomData[key] : SETTING_DEFAULTS[key]; }
 
   function defaultImpCount(n){ return n >= 14 ? 3 : (n >= 7 ? 2 : 1); }
@@ -1486,7 +1502,23 @@
   async function setSetting(key, v){
     if(!S.isHost || !S.roomData) return;
     try{ await roomRef(key).set(v); }catch(e){}
+    if(key==='botCount') reconcileBots(v);
     renderImpOpts();
+  }
+  // 대기실 AI 봇 수를 목표치에 맞춰 추가/제거 (호스트, 대기실에서만)
+  function reconcileBots(want){
+    if(!S.isHost || !S.roomData || S.roomData.status!=='lobby') return;
+    want = Math.max(0, Math.min(MAX_BOTS, want|0));
+    const players = S.roomData.players || {};
+    const botIds = Object.keys(players).filter(id=> players[id].bot);
+    const updates = {};
+    if(botIds.length > want){
+      botIds.slice(want).forEach(id=>{ updates['players/'+id]=null; updates['pos/'+id]=null; });
+    } else if(botIds.length < want){
+      const add = makeBots(players, want - botIds.length);
+      add.forEach(b=>{ updates['players/'+b.id] = { name:b.name, color:b.color, alive:true, bot:true, joinedAt:Date.now() }; });
+    }
+    if(Object.keys(updates).length) try{ roomRef('').update(updates); }catch(e){}
   }
   async function setImpCount(n){
     if(!S.isHost || !S.roomData) return;
@@ -1612,15 +1644,13 @@
 
   async function startGame(){
     if(!S.isHost || !S.roomData) return;
-    const realIds = Object.keys(S.roomData.players || {});
-    if(realIds.length < 1) return;
-    // 빈 자리를 AI 봇으로 채움 (최대 5명, 총 6명 목표)
-    const botDefs = makeBots(S.roomData.players, Math.max(0, Math.min(MAX_BOTS, TARGET_PLAYERS - realIds.length)));
-    const botIdSet = new Set(botDefs.map(b=>b.id));
-    const botDefById = {}; botDefs.forEach(b=> botDefById[b.id]=b);
-    const ids = realIds.concat(botDefs.map(b=>b.id));
-    if((S.roomData.mode||'mafia') === 'zombie'){ return startZombieGame(ids, botDefs); }
-    if((S.roomData.mode||'mafia') === 'cops'){ return startCopsGame(ids, botDefs); }
+    // 대기실에 이미 들어와 있는 사람 + AI 봇 전부로 시작
+    const ids = Object.keys(S.roomData.players || {});
+    if(ids.length < 1) return;
+    const botIdSet = new Set(ids.filter(id => S.roomData.players[id] && S.roomData.players[id].bot));
+    const botDefById = {};
+    if((S.roomData.mode||'mafia') === 'zombie'){ return startZombieGame(ids, []); }
+    if((S.roomData.mode||'mafia') === 'cops'){ return startCopsGame(ids, []); }
     const n = ids.length;
     const chosen = S.roomData.impCount || defaultImpCount(n);
     const impostorCount = Math.max(1, Math.min(chosen, Math.max(1, n-1)));
@@ -1678,7 +1708,6 @@
     updates['sabPool'] = sabTypes.slice(0, 3);
     updates['round'] = (S.roomData.round||0) + 1;
     for(const id of ids){
-      if(botIdSet.has(id)){ updates['players/'+id+'/name']=botDefById[id].name; updates['players/'+id+'/color']=botDefById[id].color; updates['players/'+id+'/bot']=true; }
       updates['players/'+id+'/alive'] = true;
       updates['players/'+id+'/bodyX'] = null;
       updates['players/'+id+'/bodyY'] = null;
